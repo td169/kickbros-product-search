@@ -2,382 +2,421 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
 <title>KICKBROS Product Search</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --paper:#F6F4EE;
-    --paper-2:#EFEBE1;
-    --ink:#211F1C;
-    --muted:#8B8478;
-    --brass:#9C7A3C;
-    --brass-dim:#C4AC7C;
-    --stamp:#A63D2F;
-    --profit:#3F6B4F;
-    --profit-bg:#E9EFE9;
-    --line:#D8D2C4;
-    --radius:2px;
+    --bg:#FFFFFF;
+    --surface:#F6F6F6;
+    --surface-2:#EDEDED;
+    --ink:#000000;
+    --muted:#6B6B6B;
+    --muted-2:#9B9B9B;
+    --line:#EBEBEB;
+    --profit:#0A7B34;
+    --profit-bg:#E6F4EA;
+    --danger:#E11900;
+    --radius-lg:20px;
+    --radius-md:14px;
+    --radius-sm:10px;
+    --radius-pill:100px;
+    --tabbar-h:58px;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    background:var(--paper);
+    background:var(--bg);
     color:var(--ink);
-    font-family:'Raleway',sans-serif;
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     min-height:100vh;
-    padding:48px 20px 80px;
+    padding-bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 16px);
     -webkit-font-smoothing:antialiased;
   }
-  .app{max-width:640px;margin:0 auto;position:relative;}
+  .app{max-width:460px;margin:0 auto;padding:0 20px;position:relative;}
 
-  /* header */
-  .eyebrow{
-    font-family:'IBM Plex Mono',monospace;
-    font-size:11px;
-    letter-spacing:.14em;
-    text-transform:uppercase;
-    color:var(--brass);
-    display:flex;
-    align-items:center;
-    gap:8px;
-    margin-bottom:10px;
+  /* top bar */
+  .topbar{display:flex;align-items:center;padding:16px 0 2px;}
+  .menu-btn{
+    width:40px;height:40px;margin-left:-8px;
+    border:none;background:transparent;border-radius:50%;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+    color:var(--ink);transition:background .15s;
   }
-  .eyebrow::before{content:"◆";font-size:9px;}
-  h1{
-    font-family:'Raleway',sans-serif;
-    font-weight:500;
-    font-size:32px;
-    line-height:1.15;
-    margin:0 0 6px;
-    letter-spacing:-.01em;
-  }
-  .sub{color:var(--muted);font-size:14px;margin:0 0 32px;max-width:46ch;}
-
-  .settings-btn{
-    position:absolute;
-    top:0; right:0;
-    width:36px;height:36px;
-    border:1px solid var(--line);
-    background:transparent;
-    border-radius:50%;
-    cursor:pointer;
-    display:flex;align-items:center;justify-content:center;
-    color:var(--muted);
-    transition:border-color .15s, color .15s;
-  }
-  .settings-btn:hover{border-color:var(--brass);color:var(--brass);}
-  .settings-btn svg{width:16px;height:16px;}
+  .menu-btn:hover{background:var(--surface);}
+  .menu-btn svg{width:22px;height:22px;}
 
   /* settings popover */
   .settings-panel{
     position:absolute;
-    top:44px; right:0;
-    width:280px;
-    background:var(--paper);
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    box-shadow:0 8px 24px rgba(33,31,28,.12);
+    top:52px; left:0;
+    width:300px;
+    background:#fff;
+    border-radius:var(--radius-md);
+    box-shadow:0 1px 2px rgba(0,0,0,.05), 0 16px 32px rgba(0,0,0,.14);
     padding:18px 18px 16px;
     z-index:20;
     display:none;
   }
   .settings-panel.open{display:block;}
   .settings-panel h3{
-    font-family:'IBM Plex Mono',monospace;
-    font-size:11px;
-    letter-spacing:.1em;
-    text-transform:uppercase;
-    color:var(--muted);
-    margin:0 0 14px;
+    font-size:12px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;
+    color:var(--muted);margin:0 0 14px;
   }
   .field{margin-bottom:12px;}
   .field label{
     display:flex;justify-content:space-between;align-items:baseline;
-    font-size:12.5px;color:var(--ink);margin-bottom:5px;
+    font-size:12.5px;font-weight:500;color:var(--ink);margin-bottom:5px;
   }
-  .field label span.hint{color:var(--muted);font-size:11px;}
+  .field label span.hint{color:var(--muted-2);font-size:11px;font-weight:400;}
   .field input{
     width:100%;
-    font-family:'IBM Plex Mono',monospace;
+    font-family:inherit;
     font-size:14px;
-    padding:7px 9px;
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    background:#fff;
-    color:var(--ink);
-  }
-  .field input:focus{outline:none;border-color:var(--brass);}
-  .settings-note{font-size:11px;color:var(--muted);line-height:1.5;margin-top:6px;}
-
-  /* input row */
-  .input-row{
-    display:flex;
-    gap:8px;
-    margin-bottom:10px;
-  }
-  .input-row input{
-    flex:1;
-    font-family:'Raleway',sans-serif;
-    font-size:14.5px;
-    padding:13px 14px;
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    background:#fff;
-    color:var(--ink);
-  }
-  .input-row input:focus{outline:none;border-color:var(--brass);}
-  .input-row input::placeholder{color:#B3AC9E;}
-  .btn{
-    font-family:'Raleway',sans-serif;
-    font-weight:600;
-    font-size:14px;
-    padding:13px 20px;
-    background:var(--ink);
-    color:var(--paper);
+    padding:9px 11px;
     border:none;
-    border-radius:var(--radius);
-    cursor:pointer;
-    white-space:nowrap;
+    border-radius:var(--radius-sm);
+    background:var(--surface);
+    color:var(--ink);
+  }
+  .field input:focus{outline:2px solid var(--ink);outline-offset:-2px;}
+  .settings-note{font-size:11px;color:var(--muted-2);line-height:1.55;margin-top:8px;}
+  .settings-note button{
+    font:inherit;font-size:11px;font-weight:600;background:none;border:none;padding:0;
+    color:var(--ink);text-decoration:underline;cursor:pointer;
+  }
+
+  /* views */
+  .view{display:none;padding-top:6px;}
+  .view.active{display:block;}
+
+  h1{
+    font-weight:800;
+    font-size:28px;
+    line-height:1.15;
+    margin:12px 0 6px;
+    letter-spacing:-.02em;
+  }
+  .sub{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 22px;max-width:40ch;}
+
+  /* search row */
+  .search-row{display:flex;gap:10px;align-items:center;margin-bottom:14px;}
+  .search-row input{
+    flex:1;height:52px;border:none;border-radius:var(--radius-pill);
+    background:var(--surface);padding:0 20px;font-size:16px;font-family:inherit;color:var(--ink);
+  }
+  .search-row input::placeholder{color:var(--muted-2);}
+  .search-row input:focus{outline:2px solid var(--ink);outline-offset:-2px;}
+  .go-btn{
+    flex:none;width:52px;height:52px;border-radius:50%;
+    background:var(--ink);border:none;color:#fff;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
     transition:background .15s;
   }
-  .btn:hover{background:#3a3730;}
-  .btn:disabled{background:#B3AC9E;cursor:default;}
-  .btn-ghost{
-    background:transparent;
-    color:var(--ink);
-    border:1px solid var(--line);
-    font-weight:500;
-  }
-  .btn-ghost:hover{border-color:var(--brass);color:var(--brass);background:transparent;}
+  .go-btn:hover{background:#2a2a2a;}
+  .go-btn:disabled{background:#D0D0D0;cursor:default;}
+  .go-btn svg{width:20px;height:20px;}
 
-  .manual-toggle{
-    font-size:12.5px;color:var(--muted);
-    background:none;border:none;cursor:pointer;
-    text-decoration:underline;text-decoration-style:dotted;
-    padding:0 0 24px;font-family:'Raleway',sans-serif;
+  /* manual toggle / panel */
+  .list-row{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    width:100%;background:var(--surface);border:none;border-radius:var(--radius-md);
+    padding:14px 16px;margin-bottom:14px;font-family:inherit;font-size:14px;font-weight:500;
+    color:var(--ink);cursor:pointer;text-align:left;
   }
-  .manual-toggle:hover{color:var(--brass);}
+  .list-row .chev{color:var(--muted-2);flex:none;transition:transform .15s;}
+  .list-row.open .chev{transform:rotate(90deg);}
 
   .manual-panel{
-    display:none;
-    gap:8px;
-    flex-direction:column;
-    margin-bottom:20px;
-    padding:14px;
-    border:1px dashed var(--line);
-    border-radius:var(--radius);
+    display:none;flex-direction:column;gap:8px;
+    margin:-4px 0 16px;padding:14px;background:var(--surface);border-radius:var(--radius-md);
   }
   .manual-panel.open{display:flex;}
   .manual-panel input{
-    font-family:'Raleway',sans-serif;
-    font-size:13.5px;
-    padding:10px 12px;
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    background:#fff;
+    height:46px;border:none;border-radius:var(--radius-sm);background:#fff;
+    padding:0 14px;font-size:15px;font-family:inherit;color:var(--ink);
   }
-  .manual-panel input:focus{outline:none;border-color:var(--brass);}
-  .manual-panel .row{display:flex;gap:8px;}
-  .manual-panel .row input{flex:1;}
+  .manual-panel input:focus{outline:2px solid var(--ink);outline-offset:-2px;}
+  .btn-pill{
+    height:46px;border:none;border-radius:var(--radius-pill);
+    background:var(--ink);color:#fff;font-family:inherit;font-weight:600;font-size:14px;
+    cursor:pointer;transition:background .15s;
+  }
+  .btn-pill:hover{background:#2a2a2a;}
+  .btn-pill:disabled{background:#D0D0D0;cursor:default;}
 
   /* status */
   .status{
-    font-family:'IBM Plex Mono',monospace;
-    font-size:12.5px;
-    color:var(--muted);
-    margin:4px 0 24px;
-    min-height:18px;
-    display:flex;
-    align-items:center;
-    gap:8px;
+    font-size:12.5px;color:var(--muted);
+    margin:2px 0 18px;min-height:16px;
+    display:flex;align-items:center;gap:8px;
   }
-  .status.err{color:var(--stamp);}
+  .status.err{color:var(--danger);}
   .pulse{
     width:6px;height:6px;border-radius:50%;
-    background:var(--brass);
+    background:var(--ink);
     animation:pulse 1.1s ease-in-out infinite;
   }
-  @keyframes pulse{0%,100%{opacity:.3;}50%{opacity:1;}}
+  @keyframes pulse{0%,100%{opacity:.25;}50%{opacity:1;}}
 
   /* result card */
   .card{
     display:none;
-    background:var(--paper);
-    border:1px solid var(--line);
-    position:relative;
-    margin-top:8px;
+    background:#fff;
+    border-radius:var(--radius-lg);
+    box-shadow:0 1px 2px rgba(0,0,0,.04), 0 12px 28px rgba(0,0,0,.08);
+    padding:22px 22px 16px;
+    margin-bottom:22px;
   }
   .card.show{display:block;}
-  .perf{
-    height:10px;
-    background-image:radial-gradient(circle at 10px 5px, var(--paper) 4.5px, transparent 4.6px);
-    background-size:20px 10px;
-    background-position:0 0;
-    position:relative;
-  }
-  .perf::before{
-    content:"";
-    position:absolute;left:0;right:0;top:0;
-    border-top:1px dashed var(--line);
-  }
-  .perf.top{background-color:var(--paper);margin-bottom:-1px;}
-  .perf.bottom{transform:scaleY(-1);margin-top:-1px;}
 
-  .card-body{padding:28px 28px 8px;}
-  .card-top{display:flex;gap:20px;margin-bottom:22px;}
+  .manual-banner{
+    display:none;align-items:flex-start;gap:10px;
+    background:var(--surface);border-radius:var(--radius-md);
+    padding:13px 15px;margin-bottom:18px;
+    font-size:13px;line-height:1.5;color:var(--ink);
+  }
+  .manual-banner.show{display:flex;}
+  .manual-banner-icon{flex:none;font-size:14px;line-height:1.5;}
+
+  .card-top{display:flex;gap:14px;margin-bottom:18px;}
   .card-img-wrap{
-    width:120px;height:120px;flex:none;
-    border:1px solid var(--line);
-    background:#fff;
+    width:84px;height:84px;flex:none;
+    border-radius:var(--radius-md);
+    background:var(--surface);
     display:flex;align-items:center;justify-content:center;
     overflow:hidden;
   }
   .card-img-wrap img{width:100%;height:100%;object-fit:cover;}
-  .card-title-wrap{flex:1;min-width:0;padding-top:2px;}
+  .card-title-wrap{flex:1;min-width:0;padding-top:1px;}
   .brand-name{
-    font-family:'IBM Plex Mono',monospace;
-    font-size:11px;letter-spacing:.12em;text-transform:uppercase;
-    color:var(--brass);margin-bottom:6px;
+    font-size:11.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:4px;
   }
   .product-name{
-    font-family:'Raleway',sans-serif;
-    font-weight:500;
-    font-size:21px;
-    line-height:1.25;
+    font-family:inherit;
+    font-weight:700;
+    font-size:18px;
+    line-height:1.3;
     margin:0 0 10px;
+    width:100%;
+    border:none;
+    border-bottom:1.5px solid transparent;
+    background:transparent;
+    color:var(--ink);
+    padding:2px 0 3px;
   }
+  .product-name::placeholder{color:var(--muted-2);font-weight:600;}
+  .product-name:focus{outline:none;border-bottom-color:var(--ink);border-bottom-style:dashed;}
   .links-row{display:flex;gap:8px;flex-wrap:wrap;}
   .stub{
-    font-family:'IBM Plex Mono',monospace;
-    font-size:11px;
-    padding:6px 10px;
-    border:1px dashed var(--brass-dim);
-    border-radius:var(--radius);
-    color:var(--brass);
+    font-size:12.5px;font-weight:600;
+    padding:7px 12px;
+    border-radius:var(--radius-pill);
+    background:var(--surface);
+    color:var(--ink);
     text-decoration:none;
     display:inline-flex;align-items:center;gap:5px;
+    transition:background .15s;
   }
-  .stub:hover{background:#fff;}
+  .stub:hover{background:var(--surface-2);}
 
-  .ledger{border-top:1px solid var(--line);padding:18px 0 6px;}
+  .ledger{border-top:1px solid var(--line);padding-top:10px;}
   .ledger-row{
     display:flex;
-    align-items:baseline;
+    align-items:center;
     justify-content:space-between;
     gap:10px;
-    padding:7px 0;
-    font-size:13.5px;
+    padding:9px 0;
+    font-size:14px;
   }
   .ledger-row .label{
     color:var(--ink);
     display:flex;align-items:center;gap:6px;
-    flex:none;
-  }
-  .ledger-row .fill{
-    flex:1;
-    border-bottom:1px dotted var(--line);
-    margin-bottom:4px;
   }
   .ledger-row .val{
-    font-family:'IBM Plex Mono',monospace;
-    font-weight:500;
+    font-weight:600;
+    font-variant-numeric:tabular-nums;
     flex:none;
     text-align:right;
   }
   .ledger-row .val input{
-    font-family:'IBM Plex Mono',monospace;
-    font-weight:500;
-    font-size:13.5px;
+    font-family:inherit;
+    font-weight:600;
+    font-size:14.5px;
+    font-variant-numeric:tabular-nums;
     text-align:right;
-    width:90px;
+    width:80px;
     border:none;
-    border-bottom:1px solid transparent;
+    border-radius:var(--radius-sm);
     background:transparent;
     color:var(--ink);
-    padding:0 0 1px;
+    padding:2px 4px;
   }
-  .ledger-row .val input:focus{outline:none;border-bottom-color:var(--brass);}
-  .ledger-row.sub .label{color:var(--muted);font-size:12.5px;}
-  .ledger-row.sub .val{color:var(--muted);font-size:12.5px;}
+  .ledger-row .val input:focus{outline:2px solid var(--ink);outline-offset:-1px;}
+  .ledger-row.sub .label{color:var(--muted);font-size:12.5px;font-weight:500;}
+  .ledger-row.sub .val{color:var(--muted);font-size:12.5px;font-weight:500;}
   .ledger-row.hero{
-    padding-top:12px;margin-top:6px;border-top:1px solid var(--line);
+    background:var(--surface);border-radius:var(--radius-md);
+    margin:6px 0;padding:12px 14px;
   }
   .ledger-row.hero .label{font-weight:600;}
-  .ledger-row.hero .val{font-size:16px;font-weight:600;}
-  .ledger-row.profit .val{color:var(--profit);font-weight:600;}
-  .ledger-row.profit{background:var(--profit-bg);margin:0 -28px;padding:9px 28px;}
+  .ledger-row.hero .val{font-size:16px;font-weight:700;}
+  .ledger-row.profit{
+    background:var(--profit-bg);border-radius:var(--radius-md);
+    margin:6px 0 0;padding:12px 14px;
+  }
+  .ledger-row.profit .val{color:var(--profit);font-weight:700;}
 
   .stamp{
-    display:inline-flex;
-    align-items:center;justify-content:center;
-    font-family:'IBM Plex Mono',monospace;
-    font-size:8.5px;
-    letter-spacing:.04em;
-    color:var(--stamp);
-    border:1.5px solid var(--stamp);
-    border-radius:50%;
-    width:34px;height:34px;
-    transform:rotate(-9deg);
-    text-align:center;
-    line-height:1.1;
+    display:inline-flex;align-items:center;
+    font-size:11px;font-weight:700;
+    color:var(--ink);
+    background:var(--surface-2);
+    border-radius:var(--radius-pill);
+    padding:3px 9px;
     flex:none;
-    opacity:.85;
   }
 
   .discount-tag{
-    font-family:'IBM Plex Mono',monospace;
-    font-size:11px;
-    padding:1px 6px;
-    border-radius:20px;
+    font-size:12px;font-weight:600;
+    padding:3px 9px;
+    border-radius:var(--radius-pill);
   }
   .discount-tag.good{color:var(--profit);background:var(--profit-bg);}
 
+  .cap-badge{
+    display:none;
+    font-size:10px;font-weight:600;
+    color:var(--muted);
+    background:var(--surface);
+    border-radius:var(--radius-pill);
+    padding:2px 8px;
+    margin-left:6px;
+    vertical-align:middle;
+  }
+  .cap-badge.show{display:inline-block;}
+
+  .manual-badge{
+    display:none;
+    font-size:9.5px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;
+    color:#fff;
+    background:var(--ink);
+    border-radius:var(--radius-pill);
+    padding:2px 8px;
+    margin-left:6px;
+  }
+  .card.manual-mode .manual-badge{display:inline-block;}
+  .card.manual-mode #frPrice,
+  .card.manual-mode #ukPrice{
+    background:var(--surface);
+  }
+  .card.manual-mode #frPrice::placeholder,
+  .card.manual-mode #ukPrice::placeholder{color:var(--muted-2);}
+
   .card-footnote{
-    font-size:11px;color:var(--muted);
+    font-size:11.5px;color:var(--muted-2);
     padding:14px 0 4px;
     border-top:1px solid var(--line);
-    margin-top:10px;
+    margin-top:8px;
     display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;
   }
   .card-footnote button{
-    font-family:'Raleway',sans-serif;
-    font-size:11px;
+    font-family:inherit;
+    font-size:11.5px;
     color:var(--muted);
     background:none;border:none;cursor:pointer;
-    text-decoration:underline;text-decoration-style:dotted;
+    text-decoration:underline;
   }
-  .card-footnote button:hover{color:var(--brass);}
+  .card-footnote button:hover{color:var(--ink);}
 
-  footer{
-    max-width:640px;margin:40px auto 0;
-    font-size:11.5px;color:var(--muted);line-height:1.6;
+  .disclaimer{
+    font-size:11.5px;color:var(--muted-2);line-height:1.6;
+    margin:0 0 12px;
   }
 
-  @media (max-width:480px){
-    body{padding:32px 16px 60px;}
-    h1{font-size:26px;}
+  /* history view */
+  .view-header{display:flex;align-items:center;justify-content:space-between;margin:10px 0 12px;}
+  .view-header h1{margin:0;}
+  .text-link{
+    background:none;border:none;font-family:inherit;font-size:13px;font-weight:600;
+    color:var(--muted);cursor:pointer;text-decoration:underline;
+  }
+  .history-list{display:flex;flex-direction:column;}
+  .history-item{
+    display:flex;align-items:center;gap:14px;
+    width:100%;background:none;border:none;cursor:pointer;
+    padding:12px 2px;border-bottom:1px solid var(--line);
+    font-family:inherit;text-align:left;
+  }
+  .history-item:last-child{border-bottom:none;}
+  .history-avatar{
+    width:44px;height:44px;border-radius:50%;flex:none;
+    background:var(--surface);overflow:hidden;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:14px;color:var(--muted);
+  }
+  .history-avatar img{width:100%;height:100%;object-fit:cover;}
+  .history-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+  .history-title{
+    font-weight:600;font-size:14.5px;color:var(--ink);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .history-sub{
+    font-size:12.5px;color:var(--muted);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .history-chev{color:var(--muted-2);flex:none;}
+  .empty-state{color:var(--muted);font-size:13.5px;text-align:center;padding:70px 24px;line-height:1.6;}
+
+  /* bottom tab bar */
+  .tabbar{
+    position:fixed;left:0;right:0;bottom:0;
+    display:flex;
+    background:#fff;
+    border-top:1px solid var(--line);
+    padding:7px 0 calc(7px + env(safe-area-inset-bottom));
+    z-index:10;
+  }
+  .tab-btn{
+    flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+    background:none;border:none;cursor:pointer;
+    font-family:inherit;font-size:11px;font-weight:600;color:var(--muted-2);
+    padding:5px 0;
+  }
+  .tab-btn svg{width:22px;height:22px;stroke:var(--muted-2);transition:stroke .15s,color .15s;}
+  .tab-btn.active{color:var(--ink);}
+  .tab-btn.active svg{stroke:var(--ink);}
+
+  @media (max-width:400px){
+    h1{font-size:25px;}
     .card-top{flex-direction:column;}
-    .card-img-wrap{width:100%;height:200px;}
-    .input-row{flex-direction:column;}
-    .settings-panel{width:calc(100vw - 40px);right:0;}
+    .card-img-wrap{width:100%;height:180px;}
+    .settings-panel{width:calc(100vw - 40px);}
   }
 </style>
 </head>
 <body>
 <div class="app">
 
-  <button class="settings-btn" id="settingsBtn" aria-label="Settings">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-  </button>
+  <div class="topbar">
+    <button class="menu-btn" id="settingsBtn" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+    </button>
+  </div>
 
   <div class="settings-panel" id="settingsPanel">
     <h3>Settings</h3>
     <div class="field">
       <label>Apify API token <span class="hint">required</span></label>
       <input type="password" id="setApifyToken" placeholder="apify_api_…" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Serper API token <span class="hint">optional</span></label>
+      <input type="password" id="setSerperToken" placeholder="serper key…" autocomplete="off">
     </div>
     <div class="field">
       <label>Détaxe refund <span class="hint">% of FR price</span></label>
@@ -391,39 +430,46 @@
       <label>Reseller discount <span class="hint">off sale price</span></label>
       <input type="number" id="setReseller" step="0.01" value="3.04">
     </div>
-    <div class="settings-note">Your token stays in this browser tab only — it's never saved to disk and resets when you reload the page. Get one free at apify.com → Settings → API tokens.</div>
+    <div class="settings-note">Tokens are saved in this browser's local storage so you don't have to re-enter them — each is only ever sent to its own provider. Apify: get one free at apify.com → Settings → API tokens. Serper (optional): for Dior/Louis Vuitton, since their sites block direct scraping, it suggests a name/image/reference price from Google's indexed page instead — always double-check before using. Get a free key at serper.dev. <button type="button" id="forgetToken">Forget saved tokens</button></div>
   </div>
 
-  <div class="eyebrow">KICKBROS Product Search</div>
-  <h1>Paste a link, get the numbers.</h1>
-  <p class="sub">Drop in a designer product page. We'll find the matching UK and FR listings, pull both prices, and work out what to charge after the détaxe refund. Add your Apify token in settings first.</p>
+  <main class="view active" id="pricesView">
+    <h1>Paste a link, get the numbers.</h1>
+    <p class="sub">Drop in a designer product page and we'll work out what to charge after the détaxe refund.</p>
 
-  <div class="input-row">
-    <input type="text" id="urlInput" placeholder="https://www.dior.com/…" autocomplete="off">
-    <button class="btn" id="checkBtn">Check</button>
-  </div>
-  <button class="manual-toggle" id="manualToggle">Prefer to paste both links yourself?</button>
-
-  <div class="manual-panel" id="manualPanel">
-    <input type="text" id="manualUk" placeholder="UK listing URL">
-    <input type="text" id="manualFr" placeholder="FR listing URL">
-    <div class="row">
-      <button class="btn btn-ghost" id="manualCheckBtn" style="flex:1;">Use these links</button>
+    <div class="search-row">
+      <input type="text" id="urlInput" placeholder="https://www.dior.com/…" autocomplete="off">
+      <button class="go-btn" id="checkBtn" aria-label="Check">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </button>
     </div>
-  </div>
 
-  <div class="status" id="status"></div>
+    <button class="list-row" id="manualToggle">
+      <span>Prefer to paste both links yourself?</span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
 
-  <div class="card" id="card">
-    <div class="perf top"></div>
-    <div class="card-body">
+    <div class="manual-panel" id="manualPanel">
+      <input type="text" id="manualUk" placeholder="UK listing URL">
+      <input type="text" id="manualFr" placeholder="FR listing URL">
+      <button class="btn-pill" id="manualCheckBtn">Use these links</button>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <div class="card" id="card">
+      <div class="manual-banner" id="manualBanner">
+        <span class="manual-banner-icon">✎</span>
+        <span id="manualBannerText"></span>
+      </div>
+
       <div class="card-top">
         <div class="card-img-wrap">
           <img id="prodImg" src="" alt="">
         </div>
         <div class="card-title-wrap">
           <div class="brand-name" id="brandName">—</div>
-          <p class="product-name" id="prodName">—</p>
+          <input type="text" class="product-name" id="prodName" placeholder="Type the product name" autocomplete="off">
           <div class="links-row">
             <a class="stub" id="frLink" href="#" target="_blank" rel="noopener">FR listing ↗</a>
             <a class="stub" id="ukLink" href="#" target="_blank" rel="noopener">UK listing ↗</a>
@@ -433,46 +479,43 @@
 
       <div class="ledger">
         <div class="ledger-row">
-          <div class="label">FR price</div><div class="fill"></div>
+          <div class="label">FR price<span class="manual-badge">type it in</span></div>
           <div class="val"><input type="number" id="frPrice" step="0.01">&nbsp;€</div>
         </div>
         <div class="ledger-row">
-          <div class="label">UK price</div><div class="fill"></div>
+          <div class="label">UK price<span class="manual-badge">type it in</span></div>
           <div class="val"><input type="number" id="ukPrice" step="0.01">&nbsp;£</div>
         </div>
         <div class="ledger-row sub">
-          <div class="label">Exchange rate (EUR→GBP)</div><div class="fill"></div>
+          <div class="label">Exchange rate (EUR→GBP)</div>
           <div class="val" id="rateVal">—</div>
         </div>
 
-        <div class="ledger-row hero" style="margin-top:14px;">
-          <div class="label" style="display:flex;align-items:center;gap:10px;">
-            <span class="stamp">12%<br>DÉTAXE</span> Cost after refund
-          </div>
-          <div class="fill"></div>
+        <div class="ledger-row hero">
+          <div class="label"><span class="stamp">12% détaxe</span>&nbsp;Cost after refund</div>
           <div class="val" id="costVal">—</div>
         </div>
 
         <div class="ledger-row hero">
-          <div class="label">Your sale price</div><div class="fill"></div>
+          <div class="label">Your sale price</div>
           <div class="val" id="saleVal">—</div>
         </div>
         <div class="ledger-row sub">
-          <div class="label">vs UK RRP</div><div class="fill"></div>
-          <div class="val"><span class="discount-tag good" id="discountVal">—</span></div>
+          <div class="label">vs UK RRP</div>
+          <div class="val"><span class="discount-tag good" id="discountVal">—</span><span class="cap-badge" id="capBadge">tier cap</span></div>
         </div>
 
-        <div class="ledger-row" style="margin-top:6px;">
-          <div class="label">Reseller / B2B price</div><div class="fill"></div>
+        <div class="ledger-row">
+          <div class="label">Reseller / B2B price</div>
           <div class="val" id="resellerVal">—</div>
         </div>
 
-        <div class="ledger-row profit" style="margin-top:10px;">
-          <div class="label">Profit at sale price</div><div class="fill"></div>
+        <div class="ledger-row profit">
+          <div class="label">Profit at sale price</div>
           <div class="val" id="profitSaleVal">—</div>
         </div>
         <div class="ledger-row profit">
-          <div class="label">Profit at reseller price</div><div class="fill"></div>
+          <div class="label">Profit at reseller price</div>
           <div class="val" id="profitResellerVal">—</div>
         </div>
       </div>
@@ -482,28 +525,47 @@
         <button id="refreshRate">refresh rate</button>
       </div>
     </div>
-    <div class="perf bottom"></div>
-  </div>
+
+    <p class="disclaimer">Prices are pulled live via Apify using your own token (Settings) — a scrape can still miss, so the FR/UK figures are always editable. Dior and Louis Vuitton block automated scraping, so those go straight to manual entry.</p>
+  </main>
+
+  <main class="view" id="historyView">
+    <div class="view-header">
+      <h1>History</h1>
+      <button class="text-link" id="clearHistoryBtn">Clear</button>
+    </div>
+    <div class="history-list" id="historyList"></div>
+    <p class="empty-state" id="historyEmpty">Nothing yet — checks you run in Prices will show up here.</p>
+  </main>
 
 </div>
 
-<footer>
-  Prices are pulled live from a real headless browser via Apify (your own token, entered in settings) so they reflect the page as loaded, but a scrape can still miss or mismatch — the FR and UK figures above are editable, so correct them by hand if something looks off. Nothing here is saved once you close the page; re-enter your token and settings each time. Each check spends a small amount of your Apify usage.
-</footer>
+<nav class="tabbar">
+  <button class="tab-btn active" id="tabPrices" data-tab="prices">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+    <span>Prices</span>
+  </button>
+  <button class="tab-btn" id="tabHistory" data-tab="history">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    <span>History</span>
+  </button>
+</nav>
 
 <script>
 (function(){
   const BRANDS = {
-    dior: { name:'Dior', test: h => h.includes('dior.com'),
+    dior: { name:'Dior', test: h => h.includes('dior.com'), scrapeBlocked:true,
       build: (url) => ({
         uk: url.replace(/\/[a-z]{2}_[a-z]{2}\//, '/en_gb/'),
         fr: url.replace(/\/[a-z]{2}_[a-z]{2}\//, '/fr_fr/')
       })
     },
-    lv: { name:'Louis Vuitton', test: h => h.includes('louisvuitton.com'),
+    lv: { name:'Louis Vuitton', test: h => h.includes('louisvuitton.com'), scrapeBlocked:true,
+      // FR uses /produits/, every other locale uses /products/ — the locale-segment swap
+      // alone leaves the wrong word in place, so it's fixed explicitly here too.
       build: (url) => ({
-        uk: url.replace(/https:\/\/[a-z]{2}\.louisvuitton\.com/, 'https://uk.louisvuitton.com').replace(/\/[a-z]{3}-[a-z]{2}\//, '/eng-gb/'),
-        fr: url.replace(/https:\/\/[a-z]{2}\.louisvuitton\.com/, 'https://fr.louisvuitton.com').replace(/\/[a-z]{3}-[a-z]{2}\//, '/fra-fr/')
+        uk: url.replace(/https:\/\/[a-z]{2}\.louisvuitton\.com/, 'https://uk.louisvuitton.com').replace(/\/[a-z]{3}-[a-z]{2}\//, '/eng-gb/').replace('/produits/', '/products/'),
+        fr: url.replace(/https:\/\/[a-z]{2}\.louisvuitton\.com/, 'https://fr.louisvuitton.com').replace(/\/[a-z]{3}-[a-z]{2}\//, '/fra-fr/').replace('/products/', '/produits/')
       })
     },
     gucci: { name:'Gucci', test: h => h.includes('gucci.com'),
@@ -534,14 +596,16 @@
 
   const PLACEHOLDER_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
-      <rect width="120" height="120" fill="#ffffff"/>
-      <g stroke="#C4AC7C" stroke-width="1.5" fill="none">
+      <rect width="120" height="120" fill="#F6F6F6"/>
+      <g stroke="#B5B5B5" stroke-width="1.5" fill="none">
         <path d="M40 50 L40 40 Q40 28 60 28 Q80 28 80 40 L80 50" />
         <rect x="30" y="50" width="60" height="46" rx="3"/>
         <path d="M30 66 H90" />
       </g>
     </svg>
   `);
+
+  const CHEV_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" class="history-chev"><polyline points="9 18 15 12 9 6"/></svg>';
 
   const el = id => document.getElementById(id);
   const settingsBtn = el('settingsBtn'), settingsPanel = el('settingsPanel');
@@ -552,7 +616,35 @@
   const card = el('card');
 
   let settings = { refund: 12, margin: 8.81, reseller: 3.04 };
-  let current = { ukUrl:null, frUrl:null, brandName:null, productName:null, imageUrl:null, rate:null };
+  let current = { rate:null, historyId:null, nameSource:null };
+
+  const TOKEN_KEY = 'kickbros_apify_token';
+  const apifyTokenInput = el('setApifyToken');
+  const savedToken = localStorage.getItem(TOKEN_KEY);
+  if (savedToken) apifyTokenInput.value = savedToken;
+  apifyTokenInput.addEventListener('input', () => {
+    const v = apifyTokenInput.value.trim();
+    if (v) localStorage.setItem(TOKEN_KEY, v);
+    else localStorage.removeItem(TOKEN_KEY);
+  });
+
+  const SERPER_KEY = 'kickbros_serper_token';
+  const serperTokenInput = el('setSerperToken');
+  const savedSerper = localStorage.getItem(SERPER_KEY);
+  if (savedSerper) serperTokenInput.value = savedSerper;
+  serperTokenInput.addEventListener('input', () => {
+    const v = serperTokenInput.value.trim();
+    if (v) localStorage.setItem(SERPER_KEY, v);
+    else localStorage.removeItem(SERPER_KEY);
+  });
+
+  el('forgetToken').addEventListener('click', () => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(SERPER_KEY);
+    apifyTokenInput.value = '';
+    serperTokenInput.value = '';
+    apifyTokenInput.focus();
+  });
 
   settingsBtn.addEventListener('click', () => settingsPanel.classList.toggle('open'));
   document.addEventListener('click', (e) => {
@@ -565,12 +657,15 @@
       settings.refund = parseFloat(el('setRefund').value) || 0;
       settings.margin = parseFloat(el('setMargin').value) || 0;
       settings.reseller = parseFloat(el('setReseller').value) || 0;
-      document.querySelector('.stamp').innerHTML = settings.refund + '%<br>DÉTAXE';
+      document.querySelector('.stamp').textContent = settings.refund + '% détaxe';
       recalc();
     });
   });
 
-  manualToggle.addEventListener('click', () => manualPanel.classList.toggle('open'));
+  manualToggle.addEventListener('click', () => {
+    manualPanel.classList.toggle('open');
+    manualToggle.classList.toggle('open');
+  });
 
   function setStatus(msg, isErr) {
     statusEl.innerHTML = msg ? (isErr ? '' : '<span class="pulse"></span>') + msg : '';
@@ -578,10 +673,9 @@
   }
 
   function fmtGBP(n){ return n==null || isNaN(n) ? '—' : '£' + n.toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2}); }
-  function fmtPct(n){ return n==null || isNaN(n) ? '—' : (n*100).toFixed(1) + '%'; }
 
   async function fetchRate() {
-    const res = await fetch('https://api.frankfurter.app/latest?from=EUR&to=GBP');
+    const res = await fetch('https://api.frankfurter.dev/v1/latest?from=EUR&to=GBP');
     if (!res.ok) throw new Error('rate fetch failed');
     const data = await res.json();
     return data.rates.GBP;
@@ -606,23 +700,68 @@
         ogImage = await page.$eval('meta[property="og:image"]', el => el.content);
       } catch (e) {}
 
+      // Structured data (schema.org Product/Offer JSON-LD) is what search engines read —
+      // it's far more reliable than scanning visible text, which can match an unrelated
+      // price elsewhere on the page (nav, related products, etc).
+      const structured = await page.evaluate(() => {
+        const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
+        for (const s of scripts) {
+          try {
+            const data = JSON.parse(s.textContent);
+            const roots = Array.isArray(data) ? data : [data];
+            for (const root of roots) {
+              const items = root && root['@graph'] ? root['@graph'] : [root];
+              for (const item of items) {
+                const offers = item && item.offers;
+                if (!offers) continue;
+                const offer = Array.isArray(offers) ? offers[0] : offers;
+                if (offer && offer.price != null) {
+                  return { price: String(offer.price), currency: offer.priceCurrency || null };
+                }
+              }
+            }
+          } catch (e) {}
+        }
+        return null;
+      }).catch(() => null);
+
       const bodyText = await page.evaluate(() => document.body.innerText).catch(() => '');
-      const gbpMatch = bodyText.match(/£\s?[\d][\d,]*(?:\.\d{2})?/);
-      const eurMatch = bodyText.match(/€\s?[\d][\d,.]*(?:,\d{2})?|[\d][\d,.]*(?:,\d{2})?\s?€/);
+      const blocked = bodyText.length < 500 && /access denied|are you a human|verify you|captcha|request blocked|robot check/i.test(bodyText);
+      // French formatting uses a space as the thousands separator (e.g. "1 090,00 €"),
+      // so the digit run has to allow embedded spaces, not just commas/dots.
+      const gbpMatch = bodyText.match(/£\s?\d(?:[\d,.\s]*\d)?/);
+      const eurMatch = bodyText.match(/€\s?\d(?:[\d,.\s]*\d)?|\d(?:[\d,.\s]*\d)?\s?€/);
 
       return {
         url: request.url,
         title,
         ogImage,
+        blocked,
+        structuredPrice: structured ? structured.price : null,
+        structuredCurrency: structured ? structured.currency : null,
         gbpPrice: gbpMatch ? gbpMatch[0] : null,
         eurPrice: eurMatch ? eurMatch[0] : null
       };
     }).toString();
   }
 
+  // Handles every separator convention we're likely to hit: "1,090.00" (UK/US),
+  // "1 090,00" (FR, space thousands + comma decimal), "1.090,00" (dot thousands + comma
+  // decimal). Whichever of , or . appears last is treated as the decimal point; the other
+  // (and any spaces) are stripped as thousands separators.
   function parseMoney(str) {
     if (!str) return null;
-    const n = parseFloat(str.replace(/[£€\s]/g, '').replace(/,(?=\d{3}(\D|$))/g, '').replace(',', '.'));
+    let s = str.replace(/[£€]/g, '').replace(/\s/g, '');
+    const lastComma = s.lastIndexOf(',');
+    const lastDot = s.lastIndexOf('.');
+    if (lastComma > -1 && lastDot > -1) {
+      s = lastComma > lastDot ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+    } else if (lastComma > -1) {
+      s = (s.length - lastComma - 1 === 2) ? s.replace(',', '.') : s.replace(/,/g, '');
+    } else if (lastDot > -1 && s.length - lastDot - 1 !== 2) {
+      s = s.replace(/\./g, '');
+    }
+    const n = parseFloat(s);
     return isNaN(n) ? null : n;
   }
 
@@ -648,6 +787,17 @@
     return items && items[0] ? items[0] : null;
   }
 
+  // Prefer the page's own schema.org price (JSON-LD) over regex-matched visible text —
+  // it's tied to the actual product, not whatever price string appears first on the page.
+  function extractPrice(result, currencyCode, symbolField) {
+    if (!result) return null;
+    if (result.structuredPrice != null && (!result.structuredCurrency || result.structuredCurrency === currencyCode)) {
+      const n = parseMoney(result.structuredPrice);
+      if (n != null) return n;
+    }
+    return parseMoney(result[symbolField]);
+  }
+
   async function extractInfo(ukUrl, frUrl, token) {
     if (!token) throw new Error('Add your Apify API token in settings first.');
     const [ukResult, frResult] = await Promise.all([
@@ -656,12 +806,148 @@
     ]);
     const productName = (ukResult && ukResult.title) || (frResult && frResult.title) || null;
     const imageUrl = (ukResult && ukResult.ogImage) || (frResult && frResult.ogImage) || null;
-    const ukPrice = parseMoney(ukResult && ukResult.gbpPrice);
-    const frPrice = parseMoney(frResult && frResult.eurPrice);
-    const notes = (ukPrice == null || frPrice == null)
-      ? 'One or both prices weren\u2019t picked up automatically — check and enter manually below.'
+    const ukPrice = extractPrice(ukResult, 'GBP', 'gbpPrice');
+    const frPrice = extractPrice(frResult, 'EUR', 'eurPrice');
+    const ukBlocked = ukResult && (ukResult.blocked || ukResult['#error']);
+    const frBlocked = frResult && (frResult.blocked || frResult['#error']);
+    const notes = (ukBlocked || frBlocked)
+      ? ('The site blocked the scrape (bot protection) on ' +
+          [ukBlocked && 'the UK listing', frBlocked && 'the FR listing'].filter(Boolean).join(' and ') +
+          ' — enter prices manually below.')
+      : (ukPrice == null || frPrice == null)
+      ? 'One or both prices weren’t picked up automatically — check and enter manually below.'
       : 'Prices scraped live via Apify — worth a glance before you commit.';
     return { productName, imageUrl, ukPrice, frPrice, notes };
+  }
+
+  // ---- history (localStorage) ----
+  const HISTORY_KEY = 'kickbros_history';
+  function loadHistory() {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch (e) { return []; }
+  }
+  function saveHistory(list) {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, 50)));
+  }
+  function makeId() { return 'h_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
+  function addHistoryEntry(entry) {
+    const list = loadHistory();
+    list.unshift(entry);
+    saveHistory(list);
+    current.historyId = entry.id;
+  }
+  function updateHistoryEntry(id, patch) {
+    const list = loadHistory();
+    const idx = list.findIndex(e => e.id === id);
+    if (idx === -1) return;
+    list[idx] = Object.assign({}, list[idx], patch);
+    saveHistory(list);
+  }
+  function initials(label) { return (label || '?').slice(0, 2).toUpperCase(); }
+
+  function renderHistory() {
+    const list = loadHistory();
+    const wrap = el('historyList');
+    const empty = el('historyEmpty');
+    wrap.innerHTML = '';
+    if (!list.length) { empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    list.forEach(entry => {
+      const btn = document.createElement('button');
+      btn.className = 'history-item';
+
+      const avatar = document.createElement('span');
+      avatar.className = 'history-avatar';
+      if (entry.imageUrl) {
+        const img = document.createElement('img');
+        img.src = entry.imageUrl;
+        img.alt = '';
+        img.onerror = () => { img.remove(); avatar.textContent = initials(entry.brandLabel); };
+        avatar.appendChild(img);
+      } else {
+        avatar.textContent = initials(entry.brandLabel);
+      }
+
+      const title = document.createElement('span');
+      title.className = 'history-title';
+      title.textContent = entry.productName || entry.brandLabel || 'Manual entry';
+
+      const sub = document.createElement('span');
+      sub.className = 'history-sub';
+      const priceBits = [];
+      if (entry.frPrice != null) priceBits.push('€' + Number(entry.frPrice).toFixed(2));
+      if (entry.ukPrice != null) priceBits.push('£' + Number(entry.ukPrice).toFixed(2));
+      const dateStr = new Date(entry.ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      sub.textContent = [entry.brandLabel, priceBits.join(' · '), dateStr].filter(Boolean).join(' · ');
+
+      const text = document.createElement('span');
+      text.className = 'history-text';
+      text.appendChild(title);
+      text.appendChild(sub);
+
+      const chevWrap = document.createElement('span');
+      chevWrap.innerHTML = CHEV_SVG;
+
+      btn.appendChild(avatar);
+      btn.appendChild(text);
+      btn.appendChild(chevWrap.firstChild);
+      btn.addEventListener('click', () => reopenHistoryEntry(entry));
+      wrap.appendChild(btn);
+    });
+  }
+
+  function reopenHistoryEntry(entry) {
+    switchTab('prices');
+    resetCardMode();
+    current.historyId = null;
+    current.nameSource = entry.productName ? 'user' : null;
+    if (entry.manualMode) {
+      card.classList.add('manual-mode');
+      el('manualBannerText').textContent = entry.brandLabel + ' blocks automated price checks — open the two listings below, then type the prices you see into the highlighted fields.';
+      el('manualBanner').classList.add('show');
+      el('frPrice').placeholder = 'tap here';
+      el('ukPrice').placeholder = 'tap here';
+    }
+    renderCard(
+      entry.brandLabel, entry.productName, entry.imageUrl, entry.ukUrl, entry.frUrl,
+      entry.ukPrice, entry.frPrice, entry.rate,
+      entry.manualMode ? 'Enter both prices by hand — this brand can’t be scraped automatically.' : 'Prices scraped live via Apify — worth a glance before you commit.'
+    );
+    current.historyId = entry.id;
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  el('clearHistoryBtn').addEventListener('click', () => {
+    localStorage.removeItem(HISTORY_KEY);
+    renderHistory();
+  });
+
+  // ---- tabs ----
+  const views = { prices: el('pricesView'), history: el('historyView') };
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  function switchTab(name) {
+    Object.keys(views).forEach(k => views[k].classList.toggle('active', k === name));
+    tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    if (name === 'history') renderHistory();
+  }
+  tabButtons.forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+  // ---- pricing calc ----
+  // Max amount the customer should ever save vs UK RRP, by RRP band — keeps the
+  // sale price from undercutting further than the pricing policy allows.
+  const SAVE_CAPS = [
+    { max: 300,  cap: 20  },
+    { max: 500,  cap: 65  },
+    { max: 1000, cap: 85  },
+    { max: 1500, cap: 140 },
+    { max: 2000, cap: 270 },
+    { max: 3000, cap: 230 },
+    { max: 4000, cap: 360 },
+    { max: 5000, cap: 450 },
+    { max: 6000, cap: 550 }
+  ];
+  function maxSaveFor(ukPrice) {
+    const tier = SAVE_CAPS.find(t => ukPrice <= t.max);
+    return tier ? tier.cap : null;
   }
 
   function recalc() {
@@ -669,31 +955,55 @@
     const ukPrice = parseFloat(el('ukPrice').value);
     const rate = current.rate;
 
+    if (current.historyId) {
+      updateHistoryEntry(current.historyId, {
+        frPrice: isNaN(frPrice) ? null : frPrice,
+        ukPrice: isNaN(ukPrice) ? null : ukPrice,
+        rate: rate || null
+      });
+    }
+
     if (isNaN(frPrice) || !rate) {
       ['costVal','saleVal','resellerVal','profitSaleVal','profitResellerVal'].forEach(id => el(id).textContent = '—');
       el('discountVal').textContent = '—';
+      el('capBadge').classList.remove('show');
       return;
     }
 
     const costEUR = frPrice * (1 - settings.refund/100);
     const costGBP = costEUR * rate;
-    const salePrice = costGBP * (1 + settings.margin/100);
+    let salePrice = costGBP * (1 + settings.margin/100);
+
+    let capApplied = false;
+    if (!isNaN(ukPrice) && ukPrice > 0) {
+      const cap = maxSaveFor(ukPrice);
+      if (cap != null) {
+        const minSalePrice = ukPrice - cap;
+        if (salePrice < minSalePrice) {
+          salePrice = minSalePrice;
+          capApplied = true;
+        }
+      }
+    }
+
     const resellerPrice = salePrice * (1 - settings.reseller/100);
     const profitSale = salePrice - costGBP;
     const profitReseller = resellerPrice - costGBP;
     const discount = (!isNaN(ukPrice) && ukPrice > 0) ? (1 - salePrice/ukPrice) : null;
+    const saveAmount = (!isNaN(ukPrice) && ukPrice > 0) ? (ukPrice - salePrice) : null;
 
     el('costVal').textContent = fmtGBP(costGBP);
     el('saleVal').textContent = fmtGBP(salePrice);
     el('resellerVal').textContent = fmtGBP(resellerPrice);
     el('profitSaleVal').textContent = fmtGBP(profitSale);
     el('profitResellerVal').textContent = fmtGBP(profitReseller);
-    el('discountVal').textContent = discount == null ? '—' : (discount*100).toFixed(1) + '% below RRP';
+    el('discountVal').textContent = discount == null ? '—' : (discount*100).toFixed(1) + '% below RRP · ' + fmtGBP(saveAmount) + ' saved';
+    el('capBadge').classList.toggle('show', capApplied);
   }
 
   function renderCard(brandLabel, productName, imageUrl, ukUrl, frUrl, ukPrice, frPrice, rate, notes) {
     el('brandName').textContent = brandLabel || 'Unrecognised brand';
-    el('prodName').textContent = productName || 'Product name not found';
+    el('prodName').value = productName || '';
     el('prodImg').src = imageUrl || PLACEHOLDER_IMG;
     el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
     el('frLink').href = frUrl || '#';
@@ -707,13 +1017,183 @@
     recalc();
   }
 
+  function resetCardMode() {
+    card.classList.remove('manual-mode');
+    el('manualBanner').classList.remove('show');
+    el('frPrice').placeholder = '';
+    el('ukPrice').placeholder = '';
+  }
+
+  // LV product URLs usually embed a readable slug (e.g. /products/again-monogram-nvprod.../M25877)
+  // — Dior's don't (just style codes), so this only ever fires for LV.
+  function guessLvName(url) {
+    try {
+      const parts = new URL(url).pathname.split('/').filter(Boolean);
+      const idx = parts.findIndex(p => p === 'products' || p === 'produits');
+      if (idx === -1 || !parts[idx + 1]) return null;
+      const slug = parts[idx + 1].replace(/-nvprod\d+v$/i, '');
+      if (!slug || slug.length < 4) return null;
+      return slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    } catch (e) { return null; }
+  }
+
+  // Google's own crawler gets past bot protection that blocks us directly (sites allow-list
+  // it for SEO) — Serper returns Google's results as JSON, with "organic" already excluding
+  // shopping ads/sponsored results, so organic[0] is the first real listing.
+  async function serperLookup(url, token) {
+    const res = await fetch('https://google.serper.dev/search', {
+      method: 'POST',
+      headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: url, num: 5 })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const top = data && data.organic && data.organic[0];
+    if (!top) return null;
+    const text = [top.title, top.snippet].filter(Boolean).join(' ');
+    const gbpMatch = text.match(/£\s?\d(?:[\d,.\s]*\d)?/);
+    const eurMatch = text.match(/€\s?\d(?:[\d,.\s]*\d)?|\d(?:[\d,.\s]*\d)?\s?€/);
+    return {
+      title: top.title || null,
+      gbpPrice: gbpMatch ? gbpMatch[0] : null,
+      eurPrice: eurMatch ? eurMatch[0] : null
+    };
+  }
+
+  // Searches Google Images for the exact product URL (not the product name) — confirmed
+  // against live data that this reliably returns the exact listing photo, whereas a
+  // name-text search can match a different colourway/variant of the same model.
+  async function serperImageSearch(url, token) {
+    const res = await fetch('https://google.serper.dev/images', {
+      method: 'POST',
+      headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: url, num: 3 })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const top = data && data.images && data.images[0];
+    if (!top) return null;
+    // top.imageUrl points at the source site's own CDN, which blocks us the same way the
+    // page itself does. top.thumbnailUrl is served from Google's own gstatic CDN instead —
+    // lower-res, but actually loadable, and plenty for the small sizes this app shows it at.
+    return top.thumbnailUrl || null;
+  }
+
+  function cleanTitle(title, brandLabel) {
+    if (!title) return null;
+    const esc = brandLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return title.replace(new RegExp('\\s*[|\\-–—]\\s*' + esc + '.*$', 'i'), '').trim() || title;
+  }
+
+  // Best-effort only: suggests name/image/price from Google's indexed snapshot of the page
+  // for brands we can't scrape directly. Never overwrites anything the user already typed.
+  // Serper calls are run strictly one at a time here, never concurrently. Firing two+ at
+  // once — even two /search calls with nothing else going on — was found to make Google's
+  // own ranking unstable for this "URL as exact query" pattern: it would sometimes return a
+  // different product's page instead of the one actually being searched for, silently
+  // breaking whichever field depended on it. Sequential calls were 100% consistent in testing.
+  async function trySerperFill(id, ukUrl, frUrl, brandLabel) {
+    const token = serperTokenInput.value.trim();
+    if (!token) return;
+    let nameApplied = false, imageApplied = null, anyApplied = false;
+
+    function applyName(title) {
+      if (!title || nameApplied || current.nameSource === 'user') return;
+      el('prodName').value = cleanTitle(title, brandLabel);
+      current.nameSource = 'serper';
+      nameApplied = true; anyApplied = true;
+    }
+    function applyPrice(fieldId, value) {
+      if (value == null || el(fieldId).value) return;
+      el(fieldId).value = value;
+      anyApplied = true;
+    }
+
+    try {
+      const ukInfo = await serperLookup(ukUrl, token).catch(() => null);
+      if (current.historyId !== id) return;
+      applyName(ukInfo && ukInfo.title);
+      applyPrice('ukPrice', ukInfo ? parseMoney(ukInfo.gbpPrice) : null);
+      recalc();
+
+      const frInfo = await serperLookup(frUrl, token).catch(() => null);
+      if (current.historyId !== id) return;
+      applyName(frInfo && frInfo.title);
+      applyPrice('frPrice', frInfo ? parseMoney(frInfo.eurPrice) : null);
+      recalc();
+
+      let img = await serperImageSearch(ukUrl, token).catch(() => null);
+      if (current.historyId !== id) return;
+      if (!img) img = await serperImageSearch(frUrl, token).catch(() => null);
+      if (current.historyId !== id) return;
+      if (img) {
+        el('prodImg').src = img;
+        el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
+        imageApplied = img; anyApplied = true;
+      }
+
+      if (anyApplied) {
+        el('footnote').textContent = 'Name/image/price suggested from Google’s indexed page (via Serper) — not a live scrape, so double-check before you commit.';
+        updateHistoryEntry(id, { productName: el('prodName').value.trim() || null, imageUrl: imageApplied });
+      }
+    } catch (e) { /* best-effort only — manual entry remains the fallback */ }
+  }
+
+  // For scraped brands where the page's own og:image was missing — same Google Images
+  // fallback as manual mode, just image-only since name/price already came from the scrape.
+  // Same one-at-a-time rule applies here too.
+  async function tryImageFallback(id, ukUrl, frUrl) {
+    const token = serperTokenInput.value.trim();
+    if (!token) return;
+    try {
+      let img = await serperImageSearch(ukUrl, token).catch(() => null);
+      if (current.historyId !== id) return;
+      if (!img) img = await serperImageSearch(frUrl, token).catch(() => null);
+      if (current.historyId !== id) return;
+      if (!img) return;
+      el('prodImg').src = img;
+      el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
+      updateHistoryEntry(id, { imageUrl: img });
+    } catch (e) { /* best-effort only */ }
+  }
+
+  // Some brands' sites block automated scraping outright (bot protection) — for those,
+  // skip the doomed scrape attempt entirely and go straight to a guided manual-entry view.
+  function showManualMode(ukUrl, frUrl, brandLabel, guessedName) {
+    resetCardMode();
+    card.classList.add('manual-mode');
+    el('manualBannerText').textContent = brandLabel + ' blocks automated price checks — open the two listings below, then type the prices you see into the highlighted fields.';
+    el('manualBanner').classList.add('show');
+    current.historyId = null;
+    current.nameSource = guessedName ? 'guess' : null;
+    renderCard(brandLabel, guessedName || null, null, ukUrl, frUrl, null, null, current.rate, 'Enter both prices by hand — this brand can’t be scraped automatically.');
+    el('frPrice').placeholder = 'tap here';
+    el('ukPrice').placeholder = 'tap here';
+    setStatus('');
+    card.scrollIntoView({ behavior:'smooth', block:'start' });
+    setTimeout(() => el(guessedName ? 'frPrice' : 'prodName').focus(), 300);
+
+    const id = makeId();
+    addHistoryEntry({ id, ts: Date.now(), brandLabel, productName: guessedName || null, imageUrl: null, ukUrl, frUrl, ukPrice: null, frPrice: null, rate: current.rate, manualMode: true });
+
+    fetchRate().then(rate => {
+      current.rate = rate;
+      el('rateVal').textContent = '1 € = £' + rate.toFixed(4);
+      recalc();
+      updateHistoryEntry(id, { rate });
+    }).catch(() => setStatus('Rate lookup failed — try "refresh rate" on the card.', true));
+
+    trySerperFill(id, ukUrl, frUrl, brandLabel);
+  }
+
   async function runCheck(ukUrl, frUrl, brandLabel) {
     const token = el('setApifyToken').value.trim();
     if (!token) {
-      setStatus('Add your Apify API token in settings first (gear icon, top right).', true);
+      setStatus('Add your Apify API token in settings first (menu icon, top left).', true);
       settingsPanel.classList.add('open');
       return;
     }
+    resetCardMode();
     checkBtn.disabled = true; manualCheckBtn.disabled = true;
     setStatus('Scraping both listings — this can take up to a minute…');
     try {
@@ -726,7 +1206,12 @@
       ]);
       if (!rate) setStatus('Rate lookup failed — using none. Try "refresh rate" on the card.', true);
       else setStatus('');
+      current.historyId = null;
+      current.nameSource = info.productName ? 'scrape' : null;
       renderCard(brandLabel, info.productName, info.imageUrl, ukUrl, frUrl, info.ukPrice, info.frPrice, rate, info.notes);
+      const newId = makeId();
+      addHistoryEntry({ id: newId, ts: Date.now(), brandLabel, productName: info.productName, imageUrl: info.imageUrl, ukUrl, frUrl, ukPrice: info.ukPrice, frPrice: info.frPrice, rate, manualMode: false });
+      if (!info.imageUrl) tryImageFallback(newId, ukUrl, frUrl);
     } catch (err) {
       setStatus('Something went wrong. Check the links manually below.', true);
     } finally {
@@ -752,7 +1237,8 @@
       manualPanel.classList.add('open');
       return;
     }
-    runCheck(uk, fr, brand.name);
+    if (brand.scrapeBlocked) showManualMode(uk, fr, brand.name, brandKey === 'lv' ? guessLvName(raw) : null);
+    else runCheck(uk, fr, brand.name);
   });
 
   urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') checkBtn.click(); });
@@ -760,9 +1246,10 @@
   manualCheckBtn.addEventListener('click', () => {
     const uk = manualUk.value.trim(), fr = manualFr.value.trim();
     if (!uk || !fr) { setStatus('Add both a UK and FR link first.', true); return; }
-    let brandLabel = 'Manual entry';
-    try { const h = new URL(uk).hostname; const bk = Object.keys(BRANDS).find(k => BRANDS[k].test(h)); if (bk) brandLabel = BRANDS[bk].name; } catch(e){}
-    runCheck(uk, fr, brandLabel);
+    let brandLabel = 'Manual entry', scrapeBlocked = false, brandKey = null;
+    try { const h = new URL(uk).hostname; const bk = Object.keys(BRANDS).find(k => BRANDS[k].test(h)); if (bk) { brandLabel = BRANDS[bk].name; scrapeBlocked = !!BRANDS[bk].scrapeBlocked; brandKey = bk; } } catch(e){}
+    if (scrapeBlocked) showManualMode(uk, fr, brandLabel, brandKey === 'lv' ? guessLvName(uk) : null);
+    else runCheck(uk, fr, brandLabel);
   });
 
   el('refreshRate').addEventListener('click', async () => {
@@ -779,6 +1266,13 @@
   });
 
   ['frPrice','ukPrice'].forEach(id => el(id).addEventListener('input', recalc));
+
+  el('prodName').addEventListener('input', () => {
+    current.nameSource = 'user';
+    if (!current.historyId) return;
+    const v = el('prodName').value.trim();
+    updateHistoryEntry(current.historyId, { productName: v || null });
+  });
 })();
 </script>
 </body>
