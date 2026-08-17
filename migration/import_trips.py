@@ -48,7 +48,7 @@ STOCK_MARKERS = ['stock only']
 SKIP_MARKERS = ["what i could", "what i couldve", "what i could've"]
 
 BRAND_KEYWORDS = [
-    (r'\bdior\b', 'Dior'),
+    (r'\bdior\b|\bcd\s+icon\b', 'Dior'),  # "CD Icon" is one of Dior's own product line names
     (r'\blv\b|louis\s*vuitton', 'Louis Vuitton'),
     (r'\bgoyard\b', 'Goyard'),
     (r'\bgucci\b', 'Gucci'),
@@ -59,6 +59,11 @@ BRAND_KEYWORDS = [
     (r'loro\s*pian[ao]', 'Loro Piana'),
     (r'tom\s*ford', 'Tom Ford'),
     (r'\bprada\b', 'Prada'),
+    (r'\bburberry\b', 'Burberry'),
+    (r'\bceline\b|c[eé]line', 'Celine'),
+    (r'tiffany', 'Tiffany & Co'),
+    (r'\bchlo[eé]\b', 'Chloe'),
+    (r'bottega\s*veneta', 'Bottega Veneta'),
 ]
 
 

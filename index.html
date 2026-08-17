@@ -1224,7 +1224,6 @@
     const ukPrice = parseFloat(el('ukPrice').value);
     const patch = {
       product_name: el('prodName').value.trim() || null,
-      name_source: current.nameSource,
       eu_retail: isNaN(frPrice) ? null : frPrice,
       uk_retail: isNaN(ukPrice) ? null : ukPrice,
       quantity: current.computed ? current.computed.quantity : (parseInt(el('quantityInput').value, 10) || 1)
@@ -1505,7 +1504,7 @@
     const row = await addCatalogEntry({
       brand: brandLabel, product_name: initialName, sku: current.sku,
       url_uk: ukUrl, url_fr: frUrl, trip_label: tripLabelInput.value.trim() || null,
-      name_source: current.nameSource, eu_retail: initialFrPrice, uk_retail: initialUkPrice
+      eu_retail: initialFrPrice, uk_retail: initialUkPrice
     });
     if (!row) { setStatus('Couldn’t save to the catalog — check your Supabase settings.', true); return; }
     const id = row.id;
@@ -1551,7 +1550,7 @@
       const row = await addCatalogEntry({
         brand: brandLabel, product_name: info.productName, sku: getSku(ukUrl) || getSku(frUrl),
         url_uk: ukUrl, url_fr: frUrl, trip_label: tripLabelInput.value.trim() || null,
-        name_source: current.nameSource, eu_retail: info.frPrice, uk_retail: info.ukPrice
+        eu_retail: info.frPrice, uk_retail: info.ukPrice
       });
       if (row) {
         current.catalogId = row.id;

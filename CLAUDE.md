@@ -94,8 +94,10 @@ Replaced the old localStorage-only History. Every check (scraped or manual) is i
 types — see `recalc()`'s tail and the `prodName` input listener. `current.catalogId` must be
 set to `null` before rendering a *new* check's card, or edits get written into the previous
 row. `current.nameSource` (`'guess' | 'scrape' | 'serper' | 'user'`) exists purely to stop
-async Serper results from clobbering a name the user already typed, and is itself a synced
-column (`name_source`) — don't drop it from `buildCatalogPatch()`.
+async Serper results from clobbering a name the user already typed — it's in-memory app state
+only, **not** synced to Supabase (the schema originally had a `name_source` column for this;
+removed as unhelpful data to have sitting in the catalog, but the JS variable itself is still
+load-bearing for the clobber-prevention logic and must stay).
 
 Writes are debounced (500ms via `scheduleCatalogSync`), not fired per keystroke — Supabase
 inserts return the row (`select().single()`) so `current.catalogId` can be set from the
