@@ -100,23 +100,42 @@
   body.result-active .new-check-btn{display:block;}
   body.dock-open .new-check-btn{display:none;}
 
-  /* settings popover */
-  .settings-panel{
+  /* brand-filter popover (top-left icon, Catalog-only) */
+  .filter-panel{
     position:absolute;
     top:52px; left:0;
-    width:300px;
+    width:260px;
+    max-height:min(70vh, 420px);
+    overflow-y:auto;
     background:var(--card-bg);
     border-radius:var(--radius-md);
     box-shadow:var(--shadow-pop);
-    padding:18px 18px 16px;
+    padding:8px;
     z-index:20;
     display:none;
   }
-  .settings-panel.open{display:block;}
-  .settings-panel h3{
-    font-size:12px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;
-    color:var(--muted);margin:0 0 14px;
+  .filter-panel.open{display:block;}
+  .filter-panel h3{
+    font-size:11px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;
+    color:var(--muted);margin:6px 10px 8px;
   }
+  .filter-item{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    width:100%;background:none;border:none;cursor:pointer;
+    padding:9px 10px;border-radius:var(--radius-sm);
+    font-family:inherit;font-size:13.5px;font-weight:500;color:var(--ink);
+    text-align:left;
+  }
+  .filter-item:hover{background:var(--surface);}
+  .filter-item.active{background:var(--surface);font-weight:700;}
+  .filter-item .count{color:var(--muted-2);font-size:11.5px;font-weight:500;}
+
+  /* settings view (a full tab now, not a popover) */
+  .settings-view h3{
+    font-size:12px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;
+    color:var(--muted);margin:18px 0 14px;
+  }
+  .settings-view h3:first-child{margin-top:0;}
   .field{margin-bottom:12px;}
   .field label{
     display:flex;justify-content:space-between;align-items:baseline;
@@ -424,6 +443,21 @@
     background:none;border:none;font-family:inherit;font-size:13px;font-weight:600;
     color:var(--muted);cursor:pointer;text-decoration:underline;
   }
+  .catalog-search{
+    width:100%;height:44px;border:none;border-radius:var(--radius-pill);
+    background:var(--surface);padding:0 16px;margin-bottom:10px;
+    font-size:14.5px;font-family:inherit;color:var(--ink);
+  }
+  .catalog-search::placeholder{color:var(--muted-2);}
+  .catalog-search:focus{outline:2px solid var(--ink);outline-offset:-2px;}
+  .active-filter-row{
+    display:flex;align-items:center;gap:6px;margin:-2px 0 10px;
+    font-size:12.5px;color:var(--muted);
+  }
+  .active-filter-row button{
+    font:inherit;font-size:12px;font-weight:600;background:var(--surface);border:none;
+    color:var(--ink);padding:3px 10px;border-radius:var(--radius-pill);cursor:pointer;
+  }
   .catalog-list{display:flex;flex-direction:column;}
   .catalog-item{
     display:flex;align-items:center;gap:10px;
@@ -444,6 +478,7 @@
     display:flex;align-items:center;justify-content:center;
     font-weight:700;font-size:14px;color:var(--muted);
   }
+  .catalog-avatar img{width:100%;height:100%;object-fit:cover;}
   .catalog-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
   .catalog-title{
     font-weight:600;font-size:14.5px;color:var(--ink);
@@ -494,7 +529,7 @@
 
   @media (max-width:400px){
     h1{font-size:23px;}
-    .settings-panel{width:calc(100vw - 40px);}
+    .filter-panel{width:calc(100vw - 40px);}
   }
 </style>
 </head>
@@ -502,47 +537,15 @@
 <div class="app">
 
   <div class="topbar">
-    <button class="menu-btn" id="settingsBtn" aria-label="Settings">
+    <button class="menu-btn" id="filterBtn" aria-label="Filter by brand">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
     </button>
     <button class="new-check-btn" id="newCheckBtn">New product</button>
   </div>
 
-  <div class="settings-panel" id="settingsPanel">
-    <h3>Settings</h3>
-    <div class="field">
-      <label>Apify API token <span class="hint">required</span></label>
-      <input type="password" id="setApifyToken" placeholder="apify_api_…" autocomplete="off">
-    </div>
-    <div class="field">
-      <label>Serper API token <span class="hint">optional</span></label>
-      <input type="password" id="setSerperToken" placeholder="serper key…" autocomplete="off">
-    </div>
-    <div class="field">
-      <label>Supabase project URL <span class="hint">required for catalog</span></label>
-      <input type="text" id="setSupabaseUrl" placeholder="https://xxxxx.supabase.co" autocomplete="off">
-    </div>
-    <div class="field">
-      <label>Supabase anon key <span class="hint">required for catalog</span></label>
-      <input type="password" id="setSupabaseKey" placeholder="eyJ…" autocomplete="off">
-    </div>
-    <div class="field">
-      <label>Trip label <span class="hint">tags new catalog entries</span></label>
-      <input type="text" id="setTripLabel" placeholder="e.g. Paris Aug 2026" autocomplete="off">
-    </div>
-    <div class="field">
-      <label>Détaxe refund <span class="hint">% of FR price</span></label>
-      <input type="number" id="setRefund" step="0.1" value="12">
-    </div>
-    <div class="field">
-      <label>Target margin <span class="hint">on cost</span></label>
-      <input type="number" id="setMargin" step="0.01" value="8.81">
-    </div>
-    <div class="field">
-      <label>Reseller discount <span class="hint">off sale price</span></label>
-      <input type="number" id="setReseller" step="0.01" value="3.04">
-    </div>
-    <div class="settings-note">All of the above are saved in this browser's local storage so you don't have to re-enter them. Apify: get one free at apify.com → Settings → API tokens. Serper (optional): for Dior/Louis Vuitton, since their sites block direct scraping, it suggests a name/image/reference price from Google's indexed page instead — always double-check before using. Get a free key at serper.dev. Supabase URL/anon key: from your project's Settings → API — this is what makes the Catalog shared across every device instead of stuck on one browser; the anon key is safe to expose client-side by design, access is controlled by the table's row-level-security policy instead. <button type="button" id="forgetToken">Forget saved tokens</button></div>
+  <div class="filter-panel" id="filterPanel">
+    <h3>Filter by brand</h3>
+    <div id="filterList"></div>
   </div>
 
   <main class="view active" id="pricesView">
@@ -649,8 +652,58 @@
       <h1>Catalog</h1>
       <button class="text-link" id="clearCatalogBtn">Clear</button>
     </div>
+    <input type="text" class="catalog-search" id="catalogSearch" placeholder="Search catalog…" autocomplete="off">
+    <div class="active-filter-row" id="activeFilterRow" style="display:none;">
+      <span id="activeFilterText"></span>
+      <button type="button" id="clearFilterBtn">Clear</button>
+    </div>
     <div class="catalog-list" id="catalogList"></div>
     <p class="empty-state" id="catalogEmpty">Nothing in the catalog yet — checks you run in Prices will show up here.</p>
+  </main>
+
+  <main class="view" id="settingsView">
+    <div class="view-header"><h1>Settings</h1></div>
+    <div class="settings-view">
+      <h3>Catalog (Supabase)</h3>
+      <div class="field">
+        <label>Supabase project URL <span class="hint">required for catalog</span></label>
+        <input type="text" id="setSupabaseUrl" placeholder="https://xxxxx.supabase.co" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Supabase anon key <span class="hint">required for catalog</span></label>
+        <input type="password" id="setSupabaseKey" placeholder="eyJ…" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Trip label <span class="hint">tags new catalog entries</span></label>
+        <input type="text" id="setTripLabel" placeholder="e.g. Paris Aug 2026" autocomplete="off">
+      </div>
+
+      <h3>Lookup APIs</h3>
+      <div class="field">
+        <label>Apify API token <span class="hint">required</span></label>
+        <input type="password" id="setApifyToken" placeholder="apify_api_…" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Serper API token <span class="hint">optional</span></label>
+        <input type="password" id="setSerperToken" placeholder="serper key…" autocomplete="off">
+      </div>
+
+      <h3>Pricing</h3>
+      <div class="field">
+        <label>Détaxe refund <span class="hint">% of FR price</span></label>
+        <input type="number" id="setRefund" step="0.1" value="12">
+      </div>
+      <div class="field">
+        <label>Target margin <span class="hint">on cost</span></label>
+        <input type="number" id="setMargin" step="0.01" value="8.81">
+      </div>
+      <div class="field">
+        <label>Reseller discount <span class="hint">off sale price</span></label>
+        <input type="number" id="setReseller" step="0.01" value="3.04">
+      </div>
+
+      <div class="settings-note">All of the above are saved in this browser's local storage so you don't have to re-enter them. Apify: get one free at apify.com → Settings → API tokens. Serper (optional): for Dior/Louis Vuitton, since their sites block direct scraping, it suggests a name/image/reference price from Google's indexed page instead — always double-check before using. Get a free key at serper.dev. Supabase URL/anon key: from your project's Settings → API — this is what makes the Catalog shared across every device instead of stuck on one browser; the anon key is safe to expose client-side by design, access is controlled by the table's row-level-security policy instead. <button type="button" id="forgetToken">Forget saved tokens</button></div>
+    </div>
   </main>
 
 </div>
@@ -675,6 +728,10 @@
   <button class="tab-btn" id="tabCatalog" data-tab="catalog">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
     <span>Catalog</span>
+  </button>
+  <button class="tab-btn" id="tabSettings" data-tab="settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    <span>Settings</span>
   </button>
 </nav>
 
@@ -735,7 +792,7 @@
   const CHEV_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" class="catalog-chev"><polyline points="9 18 15 12 9 6"/></svg>';
 
   const el = id => document.getElementById(id);
-  const settingsBtn = el('settingsBtn'), settingsPanel = el('settingsPanel');
+  const filterBtn = el('filterBtn'), filterPanel = el('filterPanel');
   const urlInput = el('urlInput'), checkBtn = el('checkBtn');
   const manualToggle = el('manualToggle'), manualPanel = el('manualPanel');
   const manualUk = el('manualUk'), manualFr = el('manualFr'), manualCheckBtn = el('manualCheckBtn');
@@ -743,7 +800,7 @@
   const card = el('card');
 
   let settings = { refund: 12, margin: 8.81, reseller: 3.04 };
-  let current = { rate:null, catalogId:null, nameSource:null, sku:null, brandKey:null, computed:null };
+  let current = { rate:null, catalogId:null, nameSource:null, sku:null, brandKey:null, computed:null, imageUrl:null };
 
   const TOKEN_KEY = 'kickbros_apify_token';
   const apifyTokenInput = el('setApifyToken');
@@ -811,10 +868,13 @@
     apifyTokenInput.focus();
   });
 
-  settingsBtn.addEventListener('click', () => settingsPanel.classList.toggle('open'));
+  filterBtn.addEventListener('click', () => {
+    filterPanel.classList.toggle('open');
+    if (filterPanel.classList.contains('open')) renderFilterList();
+  });
   document.addEventListener('click', (e) => {
-    if (!settingsPanel.contains(e.target) && e.target !== settingsBtn && !settingsBtn.contains(e.target)) {
-      settingsPanel.classList.remove('open');
+    if (!filterPanel.contains(e.target) && e.target !== filterBtn && !filterBtn.contains(e.target)) {
+      filterPanel.classList.remove('open');
     }
   });
   ['setRefund','setMargin','setReseller'].forEach(id => {
@@ -1019,18 +1079,57 @@
     btn.textContent = STATUS_LABEL[status] || STATUS_LABEL.stock;
   }
 
+  // Full fetched list lives here; search + brand filter are applied client-side against it
+  // (cheap array filtering) rather than re-querying Supabase on every keystroke.
+  let catalogRows = [];
+  let catalogBrandFilter = null;
+
   async function renderCatalog() {
-    const wrap = el('catalogList');
-    const empty = el('catalogEmpty');
-    wrap.innerHTML = '';
     if (!db) {
+      catalogRows = [];
+      const empty = el('catalogEmpty');
+      el('catalogList').innerHTML = '';
       empty.textContent = 'Add your Supabase project URL and anon key in Settings to turn on the shared catalog.';
       empty.style.display = 'block';
       return;
     }
-    const list = await loadCatalog();
+    catalogRows = await loadCatalog();
+    applyCatalogFilters();
+  }
+
+  function applyCatalogFilters() {
+    const q = el('catalogSearch').value.trim().toLowerCase();
+    let filtered = catalogRows;
+    if (catalogBrandFilter) {
+      filtered = filtered.filter(e => (e.brand || 'Unbranded') === catalogBrandFilter);
+    }
+    if (q) {
+      filtered = filtered.filter(e =>
+        (e.product_name && e.product_name.toLowerCase().includes(q)) ||
+        (e.brand && e.brand.toLowerCase().includes(q)) ||
+        (e.trip_label && e.trip_label.toLowerCase().includes(q))
+      );
+    }
+
+    const filterRow = el('activeFilterRow');
+    if (catalogBrandFilter) {
+      el('activeFilterText').textContent = 'Filtering: ' + catalogBrandFilter;
+      filterRow.style.display = 'flex';
+    } else {
+      filterRow.style.display = 'none';
+    }
+
+    renderCatalogList(filtered, catalogRows.length === 0);
+  }
+
+  function renderCatalogList(list, catalogEmpty) {
+    const wrap = el('catalogList');
+    const empty = el('catalogEmpty');
+    wrap.innerHTML = '';
     if (!list.length) {
-      empty.textContent = 'Nothing in the catalog yet — checks you run in Prices will show up here.';
+      empty.textContent = catalogEmpty
+        ? 'Nothing in the catalog yet — checks you run in Prices will show up here.'
+        : 'Nothing matches that search/filter.';
       empty.style.display = 'block';
       return;
     }
@@ -1045,7 +1144,15 @@
 
       const avatar = document.createElement('span');
       avatar.className = 'catalog-avatar';
-      avatar.textContent = initials(entry.brand);
+      if (entry.image_url) {
+        const img = document.createElement('img');
+        img.src = entry.image_url;
+        img.alt = '';
+        img.onerror = () => { img.remove(); avatar.textContent = initials(entry.brand); };
+        avatar.appendChild(img);
+      } else {
+        avatar.textContent = initials(entry.brand);
+      }
 
       const title = document.createElement('span');
       title.className = 'catalog-title';
@@ -1110,7 +1217,7 @@
     // a stale figure from whenever this was first checked.
     const rate = await fetchRate().catch(() => null);
     renderCard(
-      entry.brand, entry.product_name, null, entry.url_uk, entry.url_fr,
+      entry.brand, entry.product_name, entry.image_url || null, entry.url_uk, entry.url_fr,
       entry.uk_retail, entry.eu_retail, rate,
       manualMode ? 'Enter both prices by hand — this brand can’t be scraped automatically.' : 'Prices scraped live via Apify — worth a glance before you commit.'
     );
@@ -1127,6 +1234,48 @@
     if (error) { alert('Failed to clear catalog: ' + error.message); return; }
     renderCatalog();
   });
+
+  el('catalogSearch').addEventListener('input', applyCatalogFilters);
+
+  el('clearFilterBtn').addEventListener('click', () => {
+    catalogBrandFilter = null;
+    applyCatalogFilters();
+  });
+
+  // Brand list + counts derived from whatever's already loaded (catalogRows) — no extra
+  // Supabase query needed, since the Catalog tab already fetches everything up front.
+  function renderFilterList() {
+    const wrap = el('filterList');
+    wrap.innerHTML = '';
+    const counts = {};
+    catalogRows.forEach(e => {
+      const b = e.brand || 'Unbranded';
+      counts[b] = (counts[b] || 0) + 1;
+    });
+    const brands = Object.keys(counts).sort((a, b) => a.localeCompare(b));
+
+    function makeItem(label, count, isActive) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'filter-item' + (isActive ? ' active' : '');
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = label;
+      const countSpan = document.createElement('span');
+      countSpan.className = 'count';
+      countSpan.textContent = count;
+      btn.appendChild(nameSpan);
+      btn.appendChild(countSpan);
+      btn.addEventListener('click', () => {
+        catalogBrandFilter = label === 'All brands' ? null : label;
+        applyCatalogFilters();
+        filterPanel.classList.remove('open');
+      });
+      return btn;
+    }
+
+    wrap.appendChild(makeItem('All brands', catalogRows.length, !catalogBrandFilter));
+    brands.forEach(b => wrap.appendChild(makeItem(b, counts[b], catalogBrandFilter === b)));
+  }
 
   el('statusBtn').addEventListener('click', async () => {
     const btn = el('statusBtn');
@@ -1182,12 +1331,13 @@
   }
 
   // ---- tabs ----
-  const views = { prices: el('pricesView'), catalog: el('catalogView') };
+  const views = { prices: el('pricesView'), catalog: el('catalogView'), settings: el('settingsView') };
   const tabButtons = document.querySelectorAll('.tab-btn');
   function switchTab(name) {
     Object.keys(views).forEach(k => views[k].classList.toggle('active', k === name));
     tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     document.body.classList.toggle('tab-catalog', name === 'catalog');
+    filterPanel.classList.remove('open');
     if (name === 'catalog') renderCatalog();
   }
   tabButtons.forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
@@ -1224,6 +1374,7 @@
     const ukPrice = parseFloat(el('ukPrice').value);
     const patch = {
       product_name: el('prodName').value.trim() || null,
+      image_url: current.imageUrl,
       eu_retail: isNaN(frPrice) ? null : frPrice,
       uk_retail: isNaN(ukPrice) ? null : ukPrice,
       quantity: current.computed ? current.computed.quantity : (parseInt(el('quantityInput').value, 10) || 1)
@@ -1305,6 +1456,7 @@
     el('rateVal').textContent = rate ? ('1 € = £' + rate.toFixed(4)) : '—';
     el('footnote').textContent = notes || 'Prices scraped live via Apify — worth a glance before you commit.';
     current.rate = rate;
+    current.imageUrl = imageUrl || null;
     card.classList.add('show');
     document.body.classList.add('result-active');
     document.body.classList.remove('dock-open');
@@ -1432,7 +1584,6 @@
       applyPrice('frPrice', frInfo ? parseMoney(frInfo.eurPrice) : null);
       recalc();
 
-      // Image is UI-only — the schema has no column for it, so it's shown but never synced.
       let img = await serperImageSearch(ukUrl, token).catch(() => null);
       if (current.catalogId !== id) return;
       if (!img) img = await serperImageSearch(frUrl, token).catch(() => null);
@@ -1440,6 +1591,7 @@
       if (img) {
         el('prodImg').src = img;
         el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
+        current.imageUrl = img;
         imageApplied = img; anyApplied = true;
       }
 
@@ -1462,9 +1614,10 @@
       if (!img) img = await serperImageSearch(frUrl, token).catch(() => null);
       if (current.catalogId !== id) return;
       if (!img) return;
-      // UI-only — no image column in the schema to persist this to.
       el('prodImg').src = img;
       el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
+      current.imageUrl = img;
+      updateCatalogEntry(id, { image_url: img });
     } catch (e) { /* best-effort only */ }
   }
 
@@ -1526,8 +1679,8 @@
   async function runCheck(ukUrl, frUrl, brandLabel) {
     const token = el('setApifyToken').value.trim();
     if (!token) {
-      setStatus('Add your Apify API token in settings first (menu icon, top left).', true);
-      settingsPanel.classList.add('open');
+      setStatus('Add your Apify API token in Settings first.', true);
+      switchTab('settings');
       return;
     }
     resetCardMode();
@@ -1550,7 +1703,7 @@
       const row = await addCatalogEntry({
         brand: brandLabel, product_name: info.productName, sku: getSku(ukUrl) || getSku(frUrl),
         url_uk: ukUrl, url_fr: frUrl, trip_label: tripLabelInput.value.trim() || null,
-        eu_retail: info.frPrice, uk_retail: info.ukPrice
+        image_url: info.imageUrl, eu_retail: info.frPrice, uk_retail: info.ukPrice
       });
       if (row) {
         current.catalogId = row.id;
