@@ -14,6 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --bg:#FFFFFF;
@@ -171,7 +172,7 @@
     padding:10px 20px 12px;
     background:linear-gradient(to top, var(--bg) 65%, transparent);
   }
-  body.dock-open:not(.tab-history) .search-dock{display:block;}
+  body.dock-open:not(.tab-catalog) .search-dock{display:block;}
   .search-dock-inner{max-width:420px;margin:0 auto;}
   .search-row{display:flex;gap:10px;align-items:center;}
   .search-row input{
@@ -416,38 +417,59 @@
     margin:0 0 12px;
   }
 
-  /* history view */
+  /* catalog view */
   .view-header{display:flex;align-items:center;justify-content:space-between;margin:10px 0 12px;}
   .view-header h1{margin:0;}
   .text-link{
     background:none;border:none;font-family:inherit;font-size:13px;font-weight:600;
     color:var(--muted);cursor:pointer;text-decoration:underline;
   }
-  .history-list{display:flex;flex-direction:column;}
-  .history-item{
-    display:flex;align-items:center;gap:14px;
-    width:100%;background:none;border:none;cursor:pointer;
-    padding:12px 2px;border-bottom:1px solid var(--line);
+  .catalog-list{display:flex;flex-direction:column;}
+  .catalog-item{
+    display:flex;align-items:center;gap:10px;
+    padding:10px 2px;border-bottom:1px solid var(--line);
+  }
+  .catalog-item:last-child{border-bottom:none;}
+  /* Avatar+text+chevron is its own button (opens the entry) so the status pill can be a
+     sibling button instead of nesting — a <button> inside a <button> is invalid HTML and
+     browsers silently mangle the DOM/click handling for it. */
+  .catalog-open{
+    display:flex;align-items:center;gap:14px;flex:1;min-width:0;
+    background:none;border:none;cursor:pointer;padding:0;
     font-family:inherit;text-align:left;
   }
-  .history-item:last-child{border-bottom:none;}
-  .history-avatar{
+  .catalog-avatar{
     width:44px;height:44px;border-radius:50%;flex:none;
     background:var(--surface);overflow:hidden;
     display:flex;align-items:center;justify-content:center;
     font-weight:700;font-size:14px;color:var(--muted);
   }
-  .history-avatar img{width:100%;height:100%;object-fit:cover;}
-  .history-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
-  .history-title{
+  .catalog-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+  .catalog-title{
     font-weight:600;font-size:14.5px;color:var(--ink);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   }
-  .history-sub{
+  .catalog-sub{
     font-size:12.5px;color:var(--muted);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   }
-  .history-chev{color:var(--muted-2);flex:none;}
+  .catalog-chev{color:var(--muted-2);flex:none;}
+
+  .status-pill{
+    flex:none;
+    font-family:inherit;font-size:11px;font-weight:700;letter-spacing:.01em;
+    padding:5px 10px;
+    border:none;border-radius:var(--radius-pill);
+    cursor:pointer;text-transform:capitalize;
+    transition:background .15s;
+  }
+  .status-pill[data-status="stock"]{background:var(--surface);color:var(--muted);}
+  .status-pill[data-status="sold"]{background:var(--profit-bg);color:var(--profit);}
+  .status-pill[data-status="missed_sale"]{background:rgba(225,25,0,.12);color:var(--danger);}
+
+  .status-row{display:flex;align-items:center;gap:8px;padding:6px 0 2px;}
+  .status-row-label{font-size:10.5px;color:var(--muted-2);}
+  body.dock-open.result-active .status-row{display:none;}
   .empty-state{color:var(--muted);font-size:13.5px;text-align:center;padding:70px 24px;line-height:1.6;}
 
   /* bottom tab bar */
@@ -497,6 +519,18 @@
       <input type="password" id="setSerperToken" placeholder="serper key…" autocomplete="off">
     </div>
     <div class="field">
+      <label>Supabase project URL <span class="hint">required for catalog</span></label>
+      <input type="text" id="setSupabaseUrl" placeholder="https://xxxxx.supabase.co" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Supabase anon key <span class="hint">required for catalog</span></label>
+      <input type="password" id="setSupabaseKey" placeholder="eyJ…" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Trip label <span class="hint">tags new catalog entries</span></label>
+      <input type="text" id="setTripLabel" placeholder="e.g. Paris Aug 2026" autocomplete="off">
+    </div>
+    <div class="field">
       <label>Détaxe refund <span class="hint">% of FR price</span></label>
       <input type="number" id="setRefund" step="0.1" value="12">
     </div>
@@ -508,7 +542,7 @@
       <label>Reseller discount <span class="hint">off sale price</span></label>
       <input type="number" id="setReseller" step="0.01" value="3.04">
     </div>
-    <div class="settings-note">Tokens are saved in this browser's local storage so you don't have to re-enter them — each is only ever sent to its own provider. Apify: get one free at apify.com → Settings → API tokens. Serper (optional): for Dior/Louis Vuitton, since their sites block direct scraping, it suggests a name/image/reference price from Google's indexed page instead — always double-check before using. Get a free key at serper.dev. <button type="button" id="forgetToken">Forget saved tokens</button></div>
+    <div class="settings-note">All of the above are saved in this browser's local storage so you don't have to re-enter them. Apify: get one free at apify.com → Settings → API tokens. Serper (optional): for Dior/Louis Vuitton, since their sites block direct scraping, it suggests a name/image/reference price from Google's indexed page instead — always double-check before using. Get a free key at serper.dev. Supabase URL/anon key: from your project's Settings → API — this is what makes the Catalog shared across every device instead of stuck on one browser; the anon key is safe to expose client-side by design, access is controlled by the table's row-level-security policy instead. <button type="button" id="forgetToken">Forget saved tokens</button></div>
   </div>
 
   <main class="view active" id="pricesView">
@@ -578,6 +612,10 @@
           <div class="label">Reseller / B2B price</div>
           <div class="val" id="resellerVal">—</div>
         </div>
+        <div class="ledger-row">
+          <div class="label">Quantity</div>
+          <div class="val"><input type="number" id="quantityInput" min="1" step="1" value="1"></div>
+        </div>
 
         <div class="ledger-row profit">
           <div class="label">Profit at sale price</div>
@@ -587,24 +625,32 @@
           <div class="label">Profit at reseller price</div>
           <div class="val" id="profitResellerVal">—</div>
         </div>
+        <div class="ledger-row sub" id="totalsRow">
+          <div class="label">Total profit / spend</div>
+          <div class="val"><span id="totalProfitVal">—</span> / <span id="totalSpendVal">—</span></div>
+        </div>
       </div>
 
       <div class="card-footnote">
         <span id="footnote">Prices scraped live via Apify — worth a glance before you commit.</span>
         <button id="refreshRate">refresh rate</button>
       </div>
+      <div class="status-row">
+        <span class="status-row-label">Status</span>
+        <button type="button" class="status-pill" id="statusBtn" data-status="stock">Stock</button>
+      </div>
     </div>
 
     <p class="disclaimer">Prices are pulled live via Apify using your own token (Settings) — a scrape can still miss, so the FR/UK figures are always editable. Dior and Louis Vuitton block automated scraping, so those go straight to manual entry.</p>
   </main>
 
-  <main class="view" id="historyView">
+  <main class="view" id="catalogView">
     <div class="view-header">
-      <h1>History</h1>
-      <button class="text-link" id="clearHistoryBtn">Clear</button>
+      <h1>Catalog</h1>
+      <button class="text-link" id="clearCatalogBtn">Clear</button>
     </div>
-    <div class="history-list" id="historyList"></div>
-    <p class="empty-state" id="historyEmpty">Nothing yet — checks you run in Prices will show up here.</p>
+    <div class="catalog-list" id="catalogList"></div>
+    <p class="empty-state" id="catalogEmpty">Nothing in the catalog yet — checks you run in Prices will show up here.</p>
   </main>
 
 </div>
@@ -626,9 +672,9 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
     <span>Prices</span>
   </button>
-  <button class="tab-btn" id="tabHistory" data-tab="history">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-    <span>History</span>
+  <button class="tab-btn" id="tabCatalog" data-tab="catalog">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+    <span>Catalog</span>
   </button>
 </nav>
 
@@ -686,7 +732,7 @@
     </svg>
   `);
 
-  const CHEV_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" class="history-chev"><polyline points="9 18 15 12 9 6"/></svg>';
+  const CHEV_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" class="catalog-chev"><polyline points="9 18 15 12 9 6"/></svg>';
 
   const el = id => document.getElementById(id);
   const settingsBtn = el('settingsBtn'), settingsPanel = el('settingsPanel');
@@ -697,7 +743,7 @@
   const card = el('card');
 
   let settings = { refund: 12, margin: 8.81, reseller: 3.04 };
-  let current = { rate:null, historyId:null, nameSource:null, sku:null, brandKey:null };
+  let current = { rate:null, catalogId:null, nameSource:null, sku:null, brandKey:null, computed:null };
 
   const TOKEN_KEY = 'kickbros_apify_token';
   const apifyTokenInput = el('setApifyToken');
@@ -719,11 +765,49 @@
     else localStorage.removeItem(SERPER_KEY);
   });
 
+  // ---- Supabase (shared catalog) ----
+  // `db` names our client instance — deliberately not `supabase`, since that name is already
+  // the CDN script's global namespace object (window.supabase.createClient); reusing it would
+  // shadow the global and break re-initialization.
+  const SUPA_URL_KEY = 'kickbros_supabase_url';
+  const SUPA_ANON_KEY = 'kickbros_supabase_anon_key';
+  const supaUrlInput = el('setSupabaseUrl');
+  const supaKeyInput = el('setSupabaseKey');
+  let db = null;
+  function initSupabaseClient() {
+    const url = localStorage.getItem(SUPA_URL_KEY) || '';
+    const key = localStorage.getItem(SUPA_ANON_KEY) || '';
+    db = (url && key && window.supabase) ? window.supabase.createClient(url, key) : null;
+  }
+  const savedSupaUrl = localStorage.getItem(SUPA_URL_KEY);
+  const savedSupaKey = localStorage.getItem(SUPA_ANON_KEY);
+  if (savedSupaUrl) supaUrlInput.value = savedSupaUrl;
+  if (savedSupaKey) supaKeyInput.value = savedSupaKey;
+  initSupabaseClient();
+  [[supaUrlInput, SUPA_URL_KEY], [supaKeyInput, SUPA_ANON_KEY]].forEach(([input, key]) => {
+    input.addEventListener('input', () => {
+      const v = input.value.trim();
+      if (v) localStorage.setItem(key, v);
+      else localStorage.removeItem(key);
+      initSupabaseClient();
+    });
+  });
+
+  const TRIP_LABEL_KEY = 'kickbros_trip_label';
+  const tripLabelInput = el('setTripLabel');
+  function defaultTripLabel() { return new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }); }
+  tripLabelInput.value = localStorage.getItem(TRIP_LABEL_KEY) || defaultTripLabel();
+  tripLabelInput.addEventListener('input', () => {
+    localStorage.setItem(TRIP_LABEL_KEY, tripLabelInput.value.trim());
+  });
+
   el('forgetToken').addEventListener('click', () => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(SERPER_KEY);
+    [TOKEN_KEY, SERPER_KEY, SUPA_URL_KEY, SUPA_ANON_KEY].forEach(k => localStorage.removeItem(k));
     apifyTokenInput.value = '';
     serperTokenInput.value = '';
+    supaUrlInput.value = '';
+    supaKeyInput.value = '';
+    initSupabaseClient();
     apifyTokenInput.focus();
   });
 
@@ -901,104 +985,154 @@
     return { productName, imageUrl, ukPrice, frPrice, notes };
   }
 
-  // ---- history (localStorage) ----
-  const HISTORY_KEY = 'kickbros_history';
-  function loadHistory() {
-    try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch (e) { return []; }
-  }
-  function saveHistory(list) {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, 50)));
-  }
-  function makeId() { return 'h_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
-  function addHistoryEntry(entry) {
-    const list = loadHistory();
-    list.unshift(entry);
-    saveHistory(list);
-    current.historyId = entry.id;
-  }
-  function updateHistoryEntry(id, patch) {
-    const list = loadHistory();
-    const idx = list.findIndex(e => e.id === id);
-    if (idx === -1) return;
-    list[idx] = Object.assign({}, list[idx], patch);
-    saveHistory(list);
-  }
+  // ---- catalog (Supabase `products` table) ----
+  // Shared across every device/browser instead of localStorage's per-browser History — see
+  // CLAUDE.md for the schema. `db` is null until both the URL and anon key are set in
+  // Settings, so every function here degrades gracefully (empty list / no-op) until then.
+  const STATUS_LABEL = { stock: 'Stock', sold: 'Sold', missed_sale: 'Missed sale' };
+  const STATUS_ORDER = ['stock', 'sold', 'missed_sale'];
+  function cycleStatus(s) { return STATUS_ORDER[(STATUS_ORDER.indexOf(s) + 1) % STATUS_ORDER.length]; }
   function initials(label) { return (label || '?').slice(0, 2).toUpperCase(); }
 
-  function renderHistory() {
-    const list = loadHistory();
-    const wrap = el('historyList');
-    const empty = el('historyEmpty');
+  async function loadCatalog() {
+    if (!db) return [];
+    const { data, error } = await db.from('products').select('*').order('created_at', { ascending: false }).limit(300);
+    if (error) { console.error('loadCatalog', error); return []; }
+    return data || [];
+  }
+  // Returns the inserted row (with its server-generated id) so the caller can start tracking
+  // current.catalogId — every other write is a PATCH keyed off that id.
+  async function addCatalogEntry(fields) {
+    if (!db) return null;
+    const { data, error } = await db.from('products').insert(fields).select().single();
+    if (error) { console.error('addCatalogEntry', error); return null; }
+    return data;
+  }
+  async function updateCatalogEntry(id, patch) {
+    if (!db || !id) return;
+    const { error } = await db.from('products').update(patch).eq('id', id);
+    if (error) console.error('updateCatalogEntry', error);
+  }
+
+  function renderStatusPill(btn, status) {
+    btn.dataset.status = status;
+    btn.textContent = STATUS_LABEL[status] || STATUS_LABEL.stock;
+  }
+
+  async function renderCatalog() {
+    const wrap = el('catalogList');
+    const empty = el('catalogEmpty');
     wrap.innerHTML = '';
-    if (!list.length) { empty.style.display = 'block'; return; }
+    if (!db) {
+      empty.textContent = 'Add your Supabase project URL and anon key in Settings to turn on the shared catalog.';
+      empty.style.display = 'block';
+      return;
+    }
+    const list = await loadCatalog();
+    if (!list.length) {
+      empty.textContent = 'Nothing in the catalog yet — checks you run in Prices will show up here.';
+      empty.style.display = 'block';
+      return;
+    }
     empty.style.display = 'none';
     list.forEach(entry => {
-      const btn = document.createElement('button');
-      btn.className = 'history-item';
+      const item = document.createElement('div');
+      item.className = 'catalog-item';
+
+      const openBtn = document.createElement('button');
+      openBtn.type = 'button';
+      openBtn.className = 'catalog-open';
 
       const avatar = document.createElement('span');
-      avatar.className = 'history-avatar';
-      if (entry.imageUrl) {
-        const img = document.createElement('img');
-        img.src = entry.imageUrl;
-        img.alt = '';
-        img.onerror = () => { img.remove(); avatar.textContent = initials(entry.brandLabel); };
-        avatar.appendChild(img);
-      } else {
-        avatar.textContent = initials(entry.brandLabel);
-      }
+      avatar.className = 'catalog-avatar';
+      avatar.textContent = initials(entry.brand);
 
       const title = document.createElement('span');
-      title.className = 'history-title';
-      title.textContent = entry.productName || entry.brandLabel || 'Manual entry';
+      title.className = 'catalog-title';
+      title.textContent = entry.product_name || entry.brand || 'Manual entry';
 
       const sub = document.createElement('span');
-      sub.className = 'history-sub';
+      sub.className = 'catalog-sub';
       const priceBits = [];
-      if (entry.frPrice != null) priceBits.push('€' + Number(entry.frPrice).toFixed(2));
-      if (entry.ukPrice != null) priceBits.push('£' + Number(entry.ukPrice).toFixed(2));
-      const dateStr = new Date(entry.ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-      sub.textContent = [entry.brandLabel, priceBits.join(' · '), dateStr].filter(Boolean).join(' · ');
+      if (entry.eu_retail != null) priceBits.push('€' + Number(entry.eu_retail).toFixed(2));
+      if (entry.uk_retail != null) priceBits.push('£' + Number(entry.uk_retail).toFixed(2));
+      const dateStr = entry.created_at ? new Date(entry.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+      sub.textContent = [entry.brand, priceBits.join(' · '), entry.trip_label, dateStr].filter(Boolean).join(' · ');
 
       const text = document.createElement('span');
-      text.className = 'history-text';
+      text.className = 'catalog-text';
       text.appendChild(title);
       text.appendChild(sub);
 
       const chevWrap = document.createElement('span');
       chevWrap.innerHTML = CHEV_SVG;
 
-      btn.appendChild(avatar);
-      btn.appendChild(text);
-      btn.appendChild(chevWrap.firstChild);
-      btn.addEventListener('click', () => reopenHistoryEntry(entry));
-      wrap.appendChild(btn);
+      openBtn.appendChild(avatar);
+      openBtn.appendChild(text);
+      openBtn.appendChild(chevWrap.firstChild);
+      openBtn.addEventListener('click', () => reopenCatalogEntry(entry));
+
+      const statusBtn = document.createElement('button');
+      statusBtn.type = 'button';
+      statusBtn.className = 'status-pill';
+      renderStatusPill(statusBtn, entry.status || 'stock');
+      statusBtn.addEventListener('click', async () => {
+        const next = cycleStatus(entry.status || 'stock');
+        entry.status = next;
+        renderStatusPill(statusBtn, next);
+        await updateCatalogEntry(entry.id, { status: next });
+        if (current.catalogId === entry.id) renderStatusPill(el('statusBtn'), next);
+      });
+
+      item.appendChild(openBtn);
+      item.appendChild(statusBtn);
+      wrap.appendChild(item);
     });
   }
 
-  function reopenHistoryEntry(entry) {
+  async function reopenCatalogEntry(entry) {
     switchTab('prices');
     resetCardMode();
-    current.historyId = null;
-    current.nameSource = entry.productName ? 'user' : null;
-    if (entry.manualMode) {
+    current.catalogId = null;
+    current.nameSource = entry.product_name ? 'user' : null;
+    // The schema doesn't track which brands are scrape-blocked (that's app config, not data) —
+    // infer manual-mode styling from whether the stored brand name matches one.
+    const brandCfg = Object.values(BRANDS).find(b => b.name === entry.brand);
+    const manualMode = !!(brandCfg && brandCfg.scrapeBlocked);
+    if (manualMode) {
       card.classList.add('manual-mode');
-      el('manualBannerText').textContent = entry.brandLabel + ' blocks automated price checks — open the two listings below, then type the prices you see into the highlighted fields.';
+      el('manualBannerText').textContent = entry.brand + ' blocks automated price checks — open the two listings below, then type the prices you see into the highlighted fields.';
       el('manualBanner').classList.add('show');
       el('frPrice').placeholder = 'tap here';
       el('ukPrice').placeholder = 'tap here';
     }
+    // No stored rate on the row (rates move day to day) — fetch a fresh one rather than show
+    // a stale figure from whenever this was first checked.
+    const rate = await fetchRate().catch(() => null);
     renderCard(
-      entry.brandLabel, entry.productName, entry.imageUrl, entry.ukUrl, entry.frUrl,
-      entry.ukPrice, entry.frPrice, entry.rate,
-      entry.manualMode ? 'Enter both prices by hand — this brand can’t be scraped automatically.' : 'Prices scraped live via Apify — worth a glance before you commit.'
+      entry.brand, entry.product_name, null, entry.url_uk, entry.url_fr,
+      entry.uk_retail, entry.eu_retail, rate,
+      manualMode ? 'Enter both prices by hand — this brand can’t be scraped automatically.' : 'Prices scraped live via Apify — worth a glance before you commit.'
     );
-    current.historyId = entry.id;
+    el('quantityInput').value = entry.quantity != null ? entry.quantity : 1;
+    renderStatusPill(el('statusBtn'), entry.status || 'stock');
+    current.catalogId = entry.id;
+    recalc();
   }
 
-  el('clearHistoryBtn').addEventListener('click', () => {
-    localStorage.removeItem(HISTORY_KEY);
-    renderHistory();
+  el('clearCatalogBtn').addEventListener('click', async () => {
+    if (!db) return;
+    if (!confirm('Delete the entire catalog? This removes every product on every device and can’t be undone.')) return;
+    const { error } = await db.from('products').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) { alert('Failed to clear catalog: ' + error.message); return; }
+    renderCatalog();
+  });
+
+  el('statusBtn').addEventListener('click', async () => {
+    const btn = el('statusBtn');
+    const next = cycleStatus(btn.dataset.status || 'stock');
+    renderStatusPill(btn, next);
+    if (current.catalogId) await updateCatalogEntry(current.catalogId, { status: next });
   });
 
   // ---- known-SKU cache ----
@@ -1048,13 +1182,13 @@
   }
 
   // ---- tabs ----
-  const views = { prices: el('pricesView'), history: el('historyView') };
+  const views = { prices: el('pricesView'), catalog: el('catalogView') };
   const tabButtons = document.querySelectorAll('.tab-btn');
   function switchTab(name) {
     Object.keys(views).forEach(k => views[k].classList.toggle('active', k === name));
     tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-    document.body.classList.toggle('tab-history', name === 'history');
-    if (name === 'history') renderHistory();
+    document.body.classList.toggle('tab-catalog', name === 'catalog');
+    if (name === 'catalog') renderCatalog();
   }
   tabButtons.forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
@@ -1077,23 +1211,48 @@
     return tier ? tier.cap : null;
   }
 
+  // Debounced rather than firing on every keystroke — writing to Supabase on every character
+  // typed would hammer the network and risk out-of-order responses clobbering each other.
+  let catalogSyncTimer = null;
+  function scheduleCatalogSync() {
+    if (!current.catalogId) return;
+    clearTimeout(catalogSyncTimer);
+    catalogSyncTimer = setTimeout(() => updateCatalogEntry(current.catalogId, buildCatalogPatch()), 500);
+  }
+  function buildCatalogPatch() {
+    const frPrice = parseFloat(el('frPrice').value);
+    const ukPrice = parseFloat(el('ukPrice').value);
+    const patch = {
+      product_name: el('prodName').value.trim() || null,
+      name_source: current.nameSource,
+      eu_retail: isNaN(frPrice) ? null : frPrice,
+      uk_retail: isNaN(ukPrice) ? null : ukPrice,
+      quantity: current.computed ? current.computed.quantity : (parseInt(el('quantityInput').value, 10) || 1)
+    };
+    if (current.computed) {
+      patch.eu_after_tax = current.computed.costEUR;
+      patch.uk_after_tax = current.computed.costGBP;
+      patch.sale_price = current.computed.salePrice;
+      patch.profit = current.computed.profitSale;
+      patch.reseller_price = current.computed.resellerPrice;
+      patch.total_profit = current.computed.totalProfit;
+      patch.total_spend = current.computed.totalSpend;
+    }
+    return patch;
+  }
+
   function recalc() {
     const frPrice = parseFloat(el('frPrice').value);
     const ukPrice = parseFloat(el('ukPrice').value);
+    const qty = parseInt(el('quantityInput').value, 10) || 1;
     const rate = current.rate;
 
-    if (current.historyId) {
-      updateHistoryEntry(current.historyId, {
-        frPrice: isNaN(frPrice) ? null : frPrice,
-        ukPrice: isNaN(ukPrice) ? null : ukPrice,
-        rate: rate || null
-      });
-    }
-
     if (isNaN(frPrice) || !rate) {
-      ['costVal','saleVal','resellerVal','profitSaleVal','profitResellerVal'].forEach(id => el(id).textContent = '—');
+      ['costVal','saleVal','resellerVal','profitSaleVal','profitResellerVal','totalProfitVal','totalSpendVal'].forEach(id => el(id).textContent = '—');
       el('discountVal').textContent = '—';
       el('capBadge').classList.remove('show');
+      current.computed = null;
+      scheduleCatalogSync();
       return;
     }
 
@@ -1118,14 +1277,21 @@
     const profitReseller = resellerPrice - costGBP;
     const discount = (!isNaN(ukPrice) && ukPrice > 0) ? (1 - salePrice/ukPrice) : null;
     const saveAmount = (!isNaN(ukPrice) && ukPrice > 0) ? (ukPrice - salePrice) : null;
+    const totalProfit = profitSale * qty;
+    const totalSpend = costGBP * qty;
 
     el('costVal').textContent = fmtGBP(costGBP);
     el('saleVal').textContent = fmtGBP(salePrice);
     el('resellerVal').textContent = fmtGBP(resellerPrice);
     el('profitSaleVal').textContent = fmtGBP(profitSale);
     el('profitResellerVal').textContent = fmtGBP(profitReseller);
+    el('totalProfitVal').textContent = fmtGBP(totalProfit);
+    el('totalSpendVal').textContent = fmtGBP(totalSpend);
     el('discountVal').textContent = discount == null ? '—' : (discount*100).toFixed(1) + '% below RRP · ' + fmtGBP(saveAmount) + ' saved';
     el('capBadge').classList.toggle('show', capApplied);
+
+    current.computed = { costEUR, costGBP, salePrice, resellerPrice, profitSale, quantity: qty, totalProfit, totalSpend };
+    scheduleCatalogSync();
   }
 
   function renderCard(brandLabel, productName, imageUrl, ukUrl, frUrl, ukPrice, frPrice, rate, notes) {
@@ -1256,21 +1422,22 @@
 
     try {
       const ukInfo = await serperLookup(ukUrl, token).catch(() => null);
-      if (current.historyId !== id) return;
+      if (current.catalogId !== id) return;
       applyName(ukInfo && ukInfo.title);
       applyPrice('ukPrice', ukInfo ? parseMoney(ukInfo.gbpPrice) : null);
       recalc();
 
       const frInfo = await serperLookup(frUrl, token).catch(() => null);
-      if (current.historyId !== id) return;
+      if (current.catalogId !== id) return;
       applyName(frInfo && frInfo.title);
       applyPrice('frPrice', frInfo ? parseMoney(frInfo.eurPrice) : null);
       recalc();
 
+      // Image is UI-only — the schema has no column for it, so it's shown but never synced.
       let img = await serperImageSearch(ukUrl, token).catch(() => null);
-      if (current.historyId !== id) return;
+      if (current.catalogId !== id) return;
       if (!img) img = await serperImageSearch(frUrl, token).catch(() => null);
-      if (current.historyId !== id) return;
+      if (current.catalogId !== id) return;
       if (img) {
         el('prodImg').src = img;
         el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
@@ -1279,7 +1446,7 @@
 
       if (anyApplied) {
         el('footnote').textContent = 'Name/image/price suggested from Google’s indexed page (via Serper) — not a live scrape, so double-check before you commit.';
-        updateHistoryEntry(id, { productName: el('prodName').value.trim() || null, imageUrl: imageApplied });
+        updateCatalogEntry(id, buildCatalogPatch());
       }
     } catch (e) { /* best-effort only — manual entry remains the fallback */ }
   }
@@ -1292,22 +1459,22 @@
     if (!token) return;
     try {
       let img = await serperImageSearch(ukUrl, token).catch(() => null);
-      if (current.historyId !== id) return;
+      if (current.catalogId !== id) return;
       if (!img) img = await serperImageSearch(frUrl, token).catch(() => null);
-      if (current.historyId !== id) return;
+      if (current.catalogId !== id) return;
       if (!img) return;
+      // UI-only — no image column in the schema to persist this to.
       el('prodImg').src = img;
       el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
-      updateHistoryEntry(id, { imageUrl: img });
     } catch (e) { /* best-effort only */ }
   }
 
   // Some brands' sites block automated scraping outright (bot protection) — for those,
   // skip the doomed scrape attempt entirely and go straight to a guided manual-entry view.
-  function showManualMode(ukUrl, frUrl, brandLabel, brandKey, guessedName) {
+  async function showManualMode(ukUrl, frUrl, brandLabel, brandKey, guessedName) {
     resetCardMode();
     card.classList.add('manual-mode');
-    current.historyId = null;
+    current.catalogId = null;
     current.brandKey = brandKey;
     current.sku = getSku(ukUrl) || getSku(frUrl);
 
@@ -1328,20 +1495,26 @@
       cached ? 'Pre-filled from a previous check of this item — worth a quick glance before you commit.' : 'Enter both prices by hand — this brand can’t be scraped automatically.');
     el('frPrice').placeholder = 'tap here';
     el('ukPrice').placeholder = 'tap here';
+    renderStatusPill(el('statusBtn'), 'stock');
     setStatus('');
     let focusTarget = null;
     if (!initialName) focusTarget = 'prodName';
     else if (initialUkPrice == null && initialFrPrice == null) focusTarget = 'frPrice';
     if (focusTarget) setTimeout(() => el(focusTarget).focus(), 300);
 
-    const id = makeId();
-    addHistoryEntry({ id, ts: Date.now(), brandLabel, productName: initialName, imageUrl: null, ukUrl, frUrl, ukPrice: initialUkPrice, frPrice: initialFrPrice, rate: current.rate, manualMode: true });
+    const row = await addCatalogEntry({
+      brand: brandLabel, product_name: initialName, sku: current.sku,
+      url_uk: ukUrl, url_fr: frUrl, trip_label: tripLabelInput.value.trim() || null,
+      name_source: current.nameSource, eu_retail: initialFrPrice, uk_retail: initialUkPrice
+    });
+    if (!row) { setStatus('Couldn’t save to the catalog — check your Supabase settings.', true); return; }
+    const id = row.id;
+    current.catalogId = id;
 
     fetchRate().then(rate => {
       current.rate = rate;
       el('rateVal').textContent = '1 € = £' + rate.toFixed(4);
       recalc();
-      updateHistoryEntry(id, { rate });
     }).catch(() => setStatus('Rate lookup failed — try "refresh rate" on the card.', true));
 
     // Skip Serper entirely once this exact item already has a confirmed price cached —
@@ -1371,12 +1544,22 @@
       ]);
       if (!rate) setStatus('Rate lookup failed — using none. Try "refresh rate" on the card.', true);
       else setStatus('');
-      current.historyId = null;
+      current.catalogId = null;
       current.nameSource = info.productName ? 'scrape' : null;
       renderCard(brandLabel, info.productName, info.imageUrl, ukUrl, frUrl, info.ukPrice, info.frPrice, rate, info.notes);
-      const newId = makeId();
-      addHistoryEntry({ id: newId, ts: Date.now(), brandLabel, productName: info.productName, imageUrl: info.imageUrl, ukUrl, frUrl, ukPrice: info.ukPrice, frPrice: info.frPrice, rate, manualMode: false });
-      if (!info.imageUrl) tryImageFallback(newId, ukUrl, frUrl);
+      renderStatusPill(el('statusBtn'), 'stock');
+      const row = await addCatalogEntry({
+        brand: brandLabel, product_name: info.productName, sku: getSku(ukUrl) || getSku(frUrl),
+        url_uk: ukUrl, url_fr: frUrl, trip_label: tripLabelInput.value.trim() || null,
+        name_source: current.nameSource, eu_retail: info.frPrice, uk_retail: info.ukPrice
+      });
+      if (row) {
+        current.catalogId = row.id;
+        recalc();
+        if (!info.imageUrl) tryImageFallback(row.id, ukUrl, frUrl);
+      } else {
+        setStatus('Couldn’t save to the catalog — check your Supabase settings.', true);
+      }
     } catch (err) {
       setStatus('Something went wrong. Check the links manually below.', true);
     } finally {
@@ -1445,13 +1628,11 @@
   }
 
   ['frPrice','ukPrice'].forEach(id => el(id).addEventListener('input', () => { recalc(); syncSkuCache(); }));
+  el('quantityInput').addEventListener('input', recalc);
 
   el('prodName').addEventListener('input', () => {
     current.nameSource = 'user';
-    if (current.historyId) {
-      const v = el('prodName').value.trim();
-      updateHistoryEntry(current.historyId, { productName: v || null });
-    }
+    recalc();
     syncSkuCache();
   });
 })();

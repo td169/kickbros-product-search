@@ -87,17 +87,58 @@ table of max-allowed customer savings (in £) by UK RRP band → reseller price 
 where the £2,001–£3,000 band's cap (£230) is lower than the £1,501–£2,000 band's (£270). Don't
 "fix" this.
 
-### History (`localStorage`, key `kickbros_history`)
+### Catalog (Supabase `products` table — shared across devices)
 
-Every check (scraped or manual) is saved via `addHistoryEntry`/`updateHistoryEntry`. Price and
-name inputs sync live to `current.historyId`'s entry as the user types (see the bottom of
-`recalc` and the `prodName` input listener) — `current.historyId` must be set to `null` before
-re-rendering the card for a *new* check, or edits get written into the previous entry.
-`current.nameSource` (`'guess' | 'scrape' | 'serper' | 'user'`) exists purely to stop async
-Serper results from clobbering a name the user already typed.
+Replaced the old localStorage-only History. Every check (scraped or manual) is inserted via
+`addCatalogEntry` and live-synced via `updateCatalogEntry`/`scheduleCatalogSync` as the user
+types — see `recalc()`'s tail and the `prodName` input listener. `current.catalogId` must be
+set to `null` before rendering a *new* check's card, or edits get written into the previous
+row. `current.nameSource` (`'guess' | 'scrape' | 'serper' | 'user'`) exists purely to stop
+async Serper results from clobbering a name the user already typed, and is itself a synced
+column (`name_source`) — don't drop it from `buildCatalogPatch()`.
+
+Writes are debounced (500ms via `scheduleCatalogSync`), not fired per keystroke — Supabase
+inserts return the row (`select().single()`) so `current.catalogId` can be set from the
+response; there's no client-generated id anymore (`gen_random_uuid()` is server-side).
+
+The client variable is named `db`, not `supabase` — the CDN script's global is
+`window.supabase`, so naming the instance the same would shadow it and break
+re-initialization when the user edits the Settings fields.
+
+Schema has no `image_url`, `manual_mode`, or `rate` column: images are UI-only (never
+persisted), manual-mode styling on reopen is inferred by looking up the stored `brand` name
+against `BRANDS[...].scrapeBlocked`, and reopening an old entry fetches a *fresh* exchange
+rate rather than restoring a stale historical one. `sku` is `getSku(url)` — just the URL's
+last path segment — computed for every brand now, not only Dior/LV (that's still a separate,
+localStorage-only concept: the known-SKU *cache*, below).
+
+### Known-SKU cache (`localStorage`, separate from the Catalog)
+
+Unrelated to the Supabase catalog — this is a small local cache keyed by brand+SKU
+(`getSkuEntry`/`saveSkuEntry`) so re-checking the same Dior/LV item later pre-fills instantly.
+Only ever populated for `scrapeBlocked` brands (see `syncSkuCache`, gated on `current.sku` /
+`current.brandKey`, which are only set inside `showManualMode`). Deliberately not merged into
+the Supabase catalog — it's a UX shortcut for the manual-entry form, not a data record.
+
+### Migration script (`migration/import_trips.py`)
+
+One-time, not wired into the app. Imports the old Excel-based trip tracking
+(`Personal Shopping.xlsx`, one sheet per trip) into the `products` table. Reads
+`SUPABASE_URL`/`SUPABASE_ANON_KEY` from the environment (never hardcode real credentials into
+this file — it's committed to a public repo). Has an explicit `TRIP_SHEETS` allowlist rather
+than pattern-matching sheet names — the workbook has draft/duplicate/unrelated sheets
+(`Sheet1`, `GOYARD`, `Copy of PARIS JAN 2025`, `PARIS BUDGET 2025`, `Marketing`, ...) that
+don't match the trip-sheet column layout or would double-import real data. Run
+`--dry-run` first — it prints per-trip row/status counts and every row where brand inference
+failed, without writing anything.
 
 ### Tokens
 
-Apify (`kickbros_apify_token`) and Serper (`kickbros_serper_token`) tokens live in
-`localStorage` only, entered by the user in the settings panel. This repo is **public** — never
-hardcode a real token into `index.html` or a commit.
+Apify (`kickbros_apify_token`), Serper (`kickbros_serper_token`), and the Supabase project
+URL/anon key (`kickbros_supabase_url` / `kickbros_supabase_anon_key`) all live in
+`localStorage` only, entered by the user in the settings panel. This repo is **public** —
+never hardcode a real value for any of these into `index.html`, the migration script, or a
+commit. (The Supabase anon key is safe to expose client-side by Supabase's own design — access
+is controlled by the `products` table's row-level-security policy, not by keeping the key
+secret — but it's still kept out of the committed source rather than hardcoded, for
+consistency with the other tokens and in case the policy is tightened later.)
