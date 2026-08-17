@@ -507,7 +507,6 @@
   body.dock-open.result-active .status-row{display:none;}
   .empty-state{color:var(--muted);font-size:13.5px;text-align:center;padding:70px 24px;line-height:1.6;}
 
-  .trip-item{flex-direction:column;align-items:stretch;gap:8px;}
   .trip-stats{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12.5px;color:var(--muted);padding:0 2px;}
   .trip-stats b{color:var(--ink);font-weight:600;}
   /* Not scoped to .trip-stats — buildCatalogRow() reuses these same classes for the profit
@@ -522,6 +521,82 @@
   }
   .trip-costs-row{display:flex;flex-wrap:wrap;gap:10px 18px;margin-bottom:2px;}
   .trip-costs-row .trip-flight-row{padding:0;}
+
+  /* trips calendar */
+  .cal-header{display:flex;align-items:center;justify-content:center;gap:16px;margin:8px 0 14px;}
+  .cal-nav{
+    width:32px;height:32px;flex:none;border:none;border-radius:50%;
+    background:var(--surface);color:var(--ink);font-size:18px;line-height:1;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+  }
+  .cal-nav:hover{background:var(--surface-2);}
+  .cal-month-btn{
+    background:none;border:none;font-family:inherit;font-size:19px;font-weight:800;
+    letter-spacing:-.01em;color:var(--ink);cursor:pointer;padding:5px 12px;border-radius:var(--radius-sm);
+  }
+  .cal-month-btn:hover{background:var(--surface);}
+  .cal-weekdays{
+    display:grid;grid-template-columns:repeat(7,1fr);text-align:center;
+    font-size:11px;font-weight:700;letter-spacing:.02em;color:var(--muted-2);margin-bottom:4px;
+  }
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);row-gap:2px;padding-bottom:8px;}
+  .cal-day{
+    position:relative;height:44px;border:none;background:none;font-family:inherit;
+    display:flex;align-items:center;justify-content:center;cursor:default;padding:0;
+  }
+  .cal-day.muted .cal-day-num{color:var(--muted-2);font-weight:500;}
+  .cal-day-bg{
+    position:absolute;top:5px;bottom:5px;left:0;right:0;background:var(--profit);z-index:0;
+  }
+  .cal-day.range-start .cal-day-bg{left:5px;border-top-left-radius:999px;border-bottom-left-radius:999px;}
+  .cal-day.range-end .cal-day-bg{right:5px;border-top-right-radius:999px;border-bottom-right-radius:999px;}
+  .cal-day.in-trip{cursor:pointer;}
+  .cal-day-num{
+    position:relative;z-index:1;width:32px;height:32px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-size:14px;font-weight:600;color:var(--ink);
+  }
+  .cal-day.in-trip .cal-day-num{color:#fff;}
+  .cal-day.today .cal-day-num{box-shadow:inset 0 0 0 2px var(--ink);}
+  .cal-day.today.in-trip .cal-day-num{box-shadow:inset 0 0 0 2px #fff;}
+
+  /* month/year picker */
+  .year-stepper{
+    display:flex;align-items:center;justify-content:center;gap:18px;
+    font-size:16px;font-weight:700;margin-bottom:16px;
+  }
+  .month-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  .month-cell{
+    padding:14px 0;border:none;border-radius:var(--radius-sm);background:var(--surface);
+    color:var(--ink);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;
+  }
+  .month-cell:hover{background:var(--surface-2);}
+  .month-cell.active{background:var(--ink);color:var(--on-ink);}
+
+  /* "previous trips" dock — pinned above the tab bar, same idea as .search-dock, Trips-only */
+  .trips-dock{
+    display:none;
+    position:fixed;left:0;right:0;
+    bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+    z-index:9;
+    padding:8px 20px 10px;
+    background:linear-gradient(to top, var(--bg) 65%, transparent);
+  }
+  .trips-dock.show{display:block;}
+  .trips-dock-inner{max-width:420px;margin:0 auto;}
+  .trips-dock-label{font-size:11px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:var(--muted-2);margin:0 2px 6px;}
+  .trips-dock-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch;}
+  .trip-chip{
+    flex:none;display:flex;flex-direction:column;gap:2px;
+    min-width:132px;max-width:170px;padding:10px 12px;border:none;border-radius:var(--radius-md);
+    background:var(--card-bg);box-shadow:var(--shadow-card);
+    font-family:inherit;text-align:left;cursor:pointer;
+  }
+  .trip-chip-name{
+    font-size:12.5px;font-weight:700;color:var(--ink);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .trip-chip-sub{font-size:11px;color:var(--muted);}
 
   /* modal (New trip / Add from catalog) */
   .modal-overlay{
@@ -735,8 +810,13 @@
 
   <main class="view" id="tripsView">
     <div class="view-header"><h1>Trips</h1><button class="text-link" id="newTripBtn">New trip</button></div>
-    <div class="catalog-list" id="tripsList"></div>
-    <p class="empty-state" id="tripsEmpty">No trips yet — only items tagged with a "PARIS &lt;month&gt; &lt;year&gt;" trip label (like the old Excel import) show up here.</p>
+    <div class="cal-header">
+      <button type="button" class="cal-nav" id="calPrevBtn" aria-label="Previous month">‹</button>
+      <button type="button" class="cal-month-btn" id="calMonthBtn">Month Year</button>
+      <button type="button" class="cal-nav" id="calNextBtn" aria-label="Next month">›</button>
+    </div>
+    <div class="cal-weekdays"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div>
+    <div class="cal-grid" id="calendarGrid"></div>
   </main>
 
   <main class="view" id="tripDetailView">
@@ -745,6 +825,16 @@
     </div>
     <h1 id="tripDetailTitle">—</h1>
     <div class="trip-stats" id="tripDetailStats"></div>
+    <div class="trip-costs-row">
+      <div class="trip-flight-row">
+        <label>Start</label>
+        <input type="date" id="tripDetailStart">
+      </div>
+      <div class="trip-flight-row">
+        <label>End</label>
+        <input type="date" id="tripDetailEnd">
+      </div>
+    </div>
     <div class="trip-costs-row">
       <div class="trip-flight-row">
         <label>Flight £</label>
@@ -777,6 +867,14 @@
         <input type="text" id="newTripName" placeholder="PARIS AUGUST 2026" autocomplete="off">
       </div>
       <div class="field">
+        <label>Start date</label>
+        <input type="date" id="newTripStart">
+      </div>
+      <div class="field">
+        <label>End date</label>
+        <input type="date" id="newTripEnd">
+      </div>
+      <div class="field">
         <label>Flight cost <span class="hint">£</span></label>
         <input type="number" id="newTripFlight" step="0.01" min="0" placeholder="0.00">
       </div>
@@ -799,6 +897,21 @@
       </div>
       <input type="text" class="catalog-search" id="catalogPickerSearch" placeholder="Search catalog…" autocomplete="off">
       <div class="catalog-list" id="catalogPickerList"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="monthPickerOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Jump to month</h3>
+        <button type="button" class="modal-close" id="monthPickerClose" aria-label="Close">×</button>
+      </div>
+      <div class="year-stepper">
+        <button type="button" class="cal-nav" id="yearPrevBtn" aria-label="Previous year">‹</button>
+        <span id="yearPickerLabel">2026</span>
+        <button type="button" class="cal-nav" id="yearNextBtn" aria-label="Next year">›</button>
+      </div>
+      <div class="month-grid" id="monthGrid"></div>
     </div>
   </div>
 
@@ -854,6 +967,13 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
       </button>
     </div>
+  </div>
+</div>
+
+<div class="trips-dock" id="tripsDock">
+  <div class="trips-dock-inner">
+    <div class="trips-dock-label">Previous trips</div>
+    <div class="trips-dock-row" id="tripsDockRow"></div>
   </div>
 </div>
 
@@ -1221,24 +1341,33 @@
     return (data && data[0]) || null;
   }
 
-  // Flight/hotel cost are per-trip figures, not per-product ones, so they live in their own
-  // small `trips` table (trip_label -> flight_cost, hotel_cost) rather than on every product
-  // row. This table also doubles as the record of which trips exist at all — a brand-new trip
-  // created via "New trip" has a row here before any product is ever tagged with its label.
-  async function loadTripCosts() {
+  // Flight/hotel cost and the trip's date range are per-trip figures, not per-product ones, so
+  // they live in their own small `trips` table (trip_label -> flight_cost, hotel_cost,
+  // start_date, end_date) rather than on every product row. This table also doubles as the
+  // record of which trips exist at all — a brand-new trip created via "New trip" has a row
+  // here before any product is ever tagged with its label. start_date/end_date drive the
+  // green highlight range on the Trips calendar — a trip with no dates set just won't show
+  // there yet (it still shows in the "previous trips" dock).
+  async function loadTripMeta() {
     if (!db) return {};
-    const { data, error } = await db.from('trips').select('trip_label, flight_cost, hotel_cost');
-    if (error) { console.error('loadTripCosts', error); return {}; }
+    const { data, error } = await db.from('trips').select('trip_label, flight_cost, hotel_cost, start_date, end_date');
+    if (error) { console.error('loadTripMeta', error); return {}; }
     const map = {};
-    (data || []).forEach(t => { map[t.trip_label] = { flight_cost: t.flight_cost || 0, hotel_cost: t.hotel_cost || 0 }; });
+    (data || []).forEach(t => {
+      map[t.trip_label] = {
+        flight_cost: t.flight_cost || 0, hotel_cost: t.hotel_cost || 0,
+        start_date: t.start_date || null, end_date: t.end_date || null
+      };
+    });
     return map;
   }
   // Upserts a single field — PostgREST's upsert only touches the columns given, so setting just
-  // flight_cost on an existing row leaves hotel_cost (and vice versa) untouched.
-  async function saveTripCost(tripLabel, field, value) {
+  // flight_cost on an existing row leaves hotel_cost/start_date/end_date (and vice versa)
+  // untouched.
+  async function saveTripField(tripLabel, field, value) {
     if (!db) return;
     const { error } = await db.from('trips').upsert({ trip_label: tripLabel, [field]: value });
-    if (error) console.error('saveTripCost', tripLabel, field, error);
+    if (error) console.error('saveTripField', tripLabel, field, error);
   }
 
   function renderStatusPill(btn, status) {
@@ -1448,104 +1577,198 @@
     brands.forEach(b => wrap.appendChild(makeItem(b, counts[b], catalogBrandFilter === b)));
   }
 
-  // A "trip" is specifically a Paris buying trip — trip_label values of the shape
-  // "PARIS <MONTH> <YEAR>" (e.g. "PARIS JAN 2025", "PARIS JUNE 2025"). Anything else that
-  // happens to have a trip_label (old one-off labels like "SALES MISSED PARIS MID JULY 202",
-  // "1st time", "Sheet1 (legacy)" from the Excel import) still shows up in the Catalog, it just
-  // isn't a trip and is excluded here.
+  // A "trip" is either (a) a row explicitly created via "New trip" (present in the `trips`
+  // table, however it's named) or (b) a trip_label already on some catalog row shaped like a
+  // Paris buying trip — "PARIS <MONTH> <YEAR>" (e.g. "PARIS JAN 2025") — which is how the old
+  // Excel-imported trips show up despite never having a `trips` row of their own. Anything else
+  // that happens to have a trip_label (old one-off labels like "SALES MISSED PARIS MID JULY
+  // 202", "1st time", "Sheet1 (legacy)") still shows up in the Catalog, it just isn't a trip.
   const TRIP_LABEL_RE = /^paris\s+[a-z]+\s+\d{4}$/i;
 
-  async function renderTrips() {
-    const wrap = el('tripsList');
-    const empty = el('tripsEmpty');
-    wrap.innerHTML = '';
-    if (!db) {
-      empty.textContent = 'Add your Supabase project URL and anon key in Settings to turn on the shared catalog.';
-      empty.style.display = 'block';
-      return;
-    }
+  // The month currently shown on the Trips calendar — defaults to today's real month ("the
+  // month I'm in"), day-of-month is never read.
+  let calendarDate = new Date();
+
+  function ymd(y, m, d) { return y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0'); }
+
+  // Pulls together every known trip (see TRIP_LABEL_RE comment above) with its date range (if
+  // set) and item count, then hands off to the calendar grid and the "previous trips" dock.
+  async function renderTripsCalendar() {
     if (!catalogRows.length) catalogRows = await loadCatalog();
-    const flightCosts = await loadTripCosts();
+    const meta = db ? await loadTripMeta() : {};
 
-    const trips = {};
-    catalogRows.forEach(e => {
-      if (!e.trip_label || !TRIP_LABEL_RE.test(e.trip_label.trim())) return;
-      if (!trips[e.trip_label]) trips[e.trip_label] = { count: 0, lastTs: 0, revenue: 0, profit: 0 };
-      const t = trips[e.trip_label];
-      t.count++;
-      const ts = e.created_at ? new Date(e.created_at).getTime() : 0;
-      if (ts > t.lastTs) t.lastTs = ts;
-      // Revenue/profit only count items that actually sold — stock hasn't made money yet and
-      // a missed sale made none.
-      if (e.status === 'sold') {
-        const qty = e.quantity || 1;
-        if (e.sale_price != null) t.revenue += e.sale_price * qty;
-        t.profit += e.total_profit != null ? e.total_profit : (e.profit != null ? e.profit * qty : 0);
+    const labels = new Set();
+    catalogRows.forEach(e => { if (e.trip_label && TRIP_LABEL_RE.test(e.trip_label.trim())) labels.add(e.trip_label); });
+    Object.keys(meta).forEach(l => labels.add(l));
+
+    const trips = Array.from(labels).map(label => ({
+      label,
+      start: (meta[label] && meta[label].start_date) || null,
+      end: (meta[label] && meta[label].end_date) || null
+    }));
+
+    renderCalendarGrid(trips);
+    renderTripsDock(trips);
+  }
+
+  // Returns the trip object covering dateStr, or null — used both to decide whether a calendar
+  // day gets the green highlight and to figure out where a highlighted run starts/ends within
+  // a week row (so the "bubble" only rounds off at the true edges of the range, like connected
+  // letters in a word search, not at every single day).
+  function tripForDateStr(trips, dateStr) {
+    return trips.find(t => t.start && t.end && dateStr >= t.start && dateStr <= t.end) || null;
+  }
+
+  function renderCalendarGrid(trips) {
+    const year = calendarDate.getFullYear();
+    const month = calendarDate.getMonth();
+    el('calMonthBtn').textContent = calendarDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+
+    const grid = el('calendarGrid');
+    grid.innerHTML = '';
+
+    const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7; // Monday-first
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
+    const now = new Date();
+    const todayStr = ymd(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const totalCells = Math.ceil((firstWeekday + daysInMonth) / 7) * 7;
+    const cells = [];
+    for (let i = 0; i < totalCells; i++) {
+      const dayNum = i - firstWeekday + 1;
+      let cellYear = year, cellMonth = month, cellDay = dayNum, muted = false;
+      if (dayNum < 1) {
+        cellMonth = month - 1; cellDay = daysInPrevMonth + dayNum;
+        if (cellMonth < 0) { cellMonth = 11; cellYear--; }
+        muted = true;
+      } else if (dayNum > daysInMonth) {
+        cellMonth = month + 1; cellDay = dayNum - daysInMonth;
+        if (cellMonth > 11) { cellMonth = 0; cellYear++; }
+        muted = true;
       }
-    });
-    // A trip explicitly created via "New trip" has a row in the `trips` table before it has
-    // any products at all — show those too, not just labels derived from existing catalog rows.
-    Object.keys(flightCosts).forEach(name => {
-      if (!trips[name]) trips[name] = { count: 0, lastTs: 0, revenue: 0, profit: 0 };
-    });
-    const names = Object.keys(trips).sort((a, b) => trips[b].lastTs - trips[a].lastTs);
+      cells.push({ dateStr: ymd(cellYear, cellMonth, cellDay), day: cellDay, muted });
+    }
 
-    if (!names.length) {
-      empty.style.display = 'block';
+    for (let row = 0; row < cells.length; row += 7) {
+      const weekCells = cells.slice(row, row + 7);
+      weekCells.forEach((cell, col) => {
+        const trip = tripForDateStr(trips, cell.dateStr);
+        const prevTrip = col > 0 ? tripForDateStr(trips, weekCells[col - 1].dateStr) : null;
+        const nextTrip = col < 6 ? tripForDateStr(trips, weekCells[col + 1].dateStr) : null;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cal-day' +
+          (cell.muted ? ' muted' : '') +
+          (trip ? ' in-trip' : '') +
+          (trip && trip !== prevTrip ? ' range-start' : '') +
+          (trip && trip !== nextTrip ? ' range-end' : '') +
+          (cell.dateStr === todayStr ? ' today' : '');
+
+        if (trip) {
+          const bg = document.createElement('span');
+          bg.className = 'cal-day-bg';
+          btn.appendChild(bg);
+          btn.addEventListener('click', () => openTripDetail(trip.label));
+        } else {
+          btn.disabled = true;
+        }
+
+        const num = document.createElement('span');
+        num.className = 'cal-day-num';
+        num.textContent = cell.day;
+        btn.appendChild(num);
+
+        grid.appendChild(btn);
+      });
+    }
+  }
+
+  function formatDateRange(startStr, endStr) {
+    const fmt = s => new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    return fmt(startStr) + ' – ' + fmt(endStr);
+  }
+
+  // "Previous trips" — the docked strip at the bottom of the Trips tab (same idea as the
+  // Prices tab's search-dock), giving quick access to any trip regardless of which month the
+  // calendar above happens to be showing.
+  function renderTripsDock(trips) {
+    const row = el('tripsDockRow');
+    row.innerHTML = '';
+    if (!db) {
+      row.innerHTML = '<p class="empty-state" style="padding:14px 4px;">Add your Supabase project URL and anon key in Settings to turn on the shared catalog.</p>';
       return;
     }
-    empty.style.display = 'none';
 
-    names.forEach(name => {
-      const openBtn = document.createElement('button');
-      openBtn.type = 'button';
-      openBtn.className = 'catalog-open';
-      openBtn.style.padding = '10px 2px';
-      openBtn.style.width = '100%';
+    const counts = {};
+    const lastActivity = {};
+    catalogRows.forEach(e => {
+      if (!e.trip_label) return;
+      counts[e.trip_label] = (counts[e.trip_label] || 0) + 1;
+      const ts = e.created_at ? new Date(e.created_at).getTime() : 0;
+      if (!lastActivity[e.trip_label] || ts > lastActivity[e.trip_label]) lastActivity[e.trip_label] = ts;
+    });
 
-      const text = document.createElement('span');
-      text.className = 'catalog-text';
-      const title = document.createElement('span');
-      title.className = 'catalog-title';
-      title.textContent = name;
+    const sorted = trips.slice().sort((a, b) => {
+      const aKey = a.end || (lastActivity[a.label] ? new Date(lastActivity[a.label]).toISOString().slice(0, 10) : '');
+      const bKey = b.end || (lastActivity[b.label] ? new Date(lastActivity[b.label]).toISOString().slice(0, 10) : '');
+      return bKey < aKey ? -1 : bKey > aKey ? 1 : 0;
+    });
+
+    if (!sorted.length) {
+      row.innerHTML = '<p class="empty-state" style="padding:14px 4px;">No trips yet.</p>';
+      return;
+    }
+
+    sorted.forEach(t => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'trip-chip';
+      const name = document.createElement('span');
+      name.className = 'trip-chip-name';
+      name.textContent = t.label;
       const sub = document.createElement('span');
-      sub.className = 'catalog-sub';
-      sub.textContent = trips[name].count + (trips[name].count === 1 ? ' item' : ' items');
-      text.appendChild(title);
-      text.appendChild(sub);
-
-      const chevWrap = document.createElement('span');
-      chevWrap.innerHTML = CHEV_SVG;
-
-      openBtn.appendChild(text);
-      openBtn.appendChild(chevWrap.firstChild);
-      openBtn.addEventListener('click', () => openTripDetail(name));
-
-      // Flight/hotel cost are only editable on the Trip Detail page (openTripDetail) — the
-      // list here just reads whatever's already saved to compute net profit.
-      const flightCost = (flightCosts[name] && flightCosts[name].flight_cost) || 0;
-      const hotelCost = (flightCosts[name] && flightCosts[name].hotel_cost) || 0;
-      const net = trips[name].profit - flightCost - hotelCost;
-
-      const stats = document.createElement('div');
-      stats.className = 'trip-stats';
-      const revenueSpan = document.createElement('span');
-      revenueSpan.innerHTML = 'Revenue <b>' + fmtGBP(trips[name].revenue) + '</b>';
-      const profitSpan = document.createElement('span');
-      profitSpan.innerHTML = 'Profit <b>' + fmtGBP(trips[name].profit) + '</b>';
-      const netSpan = document.createElement('span');
-      netSpan.innerHTML = 'Net profit <b class="' + (net >= 0 ? 'trip-net-pos' : 'trip-net-neg') + '">' + fmtGBP(net) + '</b>';
-      stats.appendChild(revenueSpan);
-      stats.appendChild(profitSpan);
-      stats.appendChild(netSpan);
-
-      const row = document.createElement('div');
-      row.className = 'catalog-item trip-item';
-      row.appendChild(openBtn);
-      row.appendChild(stats);
-      wrap.appendChild(row);
+      sub.className = 'trip-chip-sub';
+      sub.textContent = (t.start && t.end)
+        ? formatDateRange(t.start, t.end)
+        : (counts[t.label] || 0) + ((counts[t.label] || 0) === 1 ? ' item' : ' items');
+      chip.appendChild(name);
+      chip.appendChild(sub);
+      chip.addEventListener('click', () => openTripDetail(t.label));
+      row.appendChild(chip);
     });
   }
+
+  // ---- month/year picker ----
+  const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function renderMonthGrid() {
+    el('yearPickerLabel').textContent = calendarDate.getFullYear();
+    const grid = el('monthGrid');
+    grid.innerHTML = '';
+    MONTH_NAMES.forEach((name, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'month-cell' + (i === calendarDate.getMonth() ? ' active' : '');
+      btn.textContent = name;
+      btn.addEventListener('click', () => {
+        calendarDate = new Date(calendarDate.getFullYear(), i, 1);
+        closeMonthPicker();
+        renderTripsCalendar();
+      });
+      grid.appendChild(btn);
+    });
+  }
+  function openMonthPicker() { renderMonthGrid(); el('monthPickerOverlay').classList.add('open'); }
+  function closeMonthPicker() { el('monthPickerOverlay').classList.remove('open'); }
+
+  el('calMonthBtn').addEventListener('click', openMonthPicker);
+  el('monthPickerClose').addEventListener('click', closeMonthPicker);
+  el('monthPickerOverlay').addEventListener('click', (e) => { if (e.target === el('monthPickerOverlay')) closeMonthPicker(); });
+  el('yearPrevBtn').addEventListener('click', () => { calendarDate = new Date(calendarDate.getFullYear() - 1, calendarDate.getMonth(), 1); renderMonthGrid(); });
+  el('yearNextBtn').addEventListener('click', () => { calendarDate = new Date(calendarDate.getFullYear() + 1, calendarDate.getMonth(), 1); renderMonthGrid(); });
+  el('calPrevBtn').addEventListener('click', () => { calendarDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1); renderTripsCalendar(); });
+  el('calNextBtn').addEventListener('click', () => { calendarDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1); renderTripsCalendar(); });
 
   // ---- trip detail ----
   let currentTripDetailLabel = null;
@@ -1557,6 +1780,9 @@
     document.body.dataset.tab = 'trips';
     filterPanel.classList.remove('open');
     el('tripLinkDock').style.display = 'none';
+    // The "previous trips" dock belongs to the calendar list screen, not the drilled-into
+    // detail screen — it would otherwise float over the detail view's own content.
+    el('tripsDock').classList.remove('show');
     renderTripDetail(label);
   }
 
@@ -1572,11 +1798,13 @@
       return sum + (e.total_profit != null ? e.total_profit : (e.profit != null ? e.profit * qty : 0));
     }, 0);
 
-    const costs = await loadTripCosts();
-    const flightCost = (costs[label] && costs[label].flight_cost) || 0;
-    const hotelCost = (costs[label] && costs[label].hotel_cost) || 0;
+    const meta = await loadTripMeta();
+    const flightCost = (meta[label] && meta[label].flight_cost) || 0;
+    const hotelCost = (meta[label] && meta[label].hotel_cost) || 0;
     el('tripDetailFlight').value = flightCost || '';
     el('tripDetailHotel').value = hotelCost || '';
+    el('tripDetailStart').value = (meta[label] && meta[label].start_date) || '';
+    el('tripDetailEnd').value = (meta[label] && meta[label].end_date) || '';
     const net = profit - flightCost - hotelCost;
     el('tripDetailStats').innerHTML =
       items.length + (items.length === 1 ? ' item' : ' items') +
@@ -1597,12 +1825,22 @@
 
   el('tripDetailBack').addEventListener('click', () => switchTab('trips'));
 
-  ['tripDetailFlight', 'tripDetailHotel'].forEach(id => {
+  const TRIP_DETAIL_FIELD_MAP = {
+    tripDetailFlight: 'flight_cost', tripDetailHotel: 'hotel_cost',
+    tripDetailStart: 'start_date', tripDetailEnd: 'end_date'
+  };
+  Object.keys(TRIP_DETAIL_FIELD_MAP).forEach(id => {
     el(id).addEventListener('change', async () => {
       if (!currentTripDetailLabel) return;
-      const field = id === 'tripDetailFlight' ? 'flight_cost' : 'hotel_cost';
-      const cost = parseFloat(el(id).value);
-      await saveTripCost(currentTripDetailLabel, field, isNaN(cost) ? 0 : cost);
+      const field = TRIP_DETAIL_FIELD_MAP[id];
+      let value;
+      if (field === 'flight_cost' || field === 'hotel_cost') {
+        const cost = parseFloat(el(id).value);
+        value = isNaN(cost) ? 0 : cost;
+      } else {
+        value = el(id).value || null;
+      }
+      await saveTripField(currentTripDetailLabel, field, value);
       renderTripDetail(currentTripDetailLabel);
     });
   });
@@ -1637,6 +1875,8 @@
   // ---- new trip modal ----
   function openNewTripModal() {
     el('newTripName').value = '';
+    el('newTripStart').value = '';
+    el('newTripEnd').value = '';
     el('newTripFlight').value = '';
     el('newTripHotel').value = '';
     el('newTripOverlay').classList.add('open');
@@ -1652,9 +1892,13 @@
     const name = el('newTripName').value.trim();
     if (!name) { el('newTripName').focus(); return; }
     if (!db) { alert('Add your Supabase project URL and anon key in Settings first.'); return; }
+    const startDate = el('newTripStart').value || null;
+    const endDate = el('newTripEnd').value || null;
     const flight = parseFloat(el('newTripFlight').value) || 0;
     const hotel = parseFloat(el('newTripHotel').value) || 0;
-    const { error } = await db.from('trips').upsert({ trip_label: name, flight_cost: flight, hotel_cost: hotel });
+    const { error } = await db.from('trips').upsert({
+      trip_label: name, flight_cost: flight, hotel_cost: hotel, start_date: startDate, end_date: endDate
+    });
     if (error) { alert('Couldn’t create the trip: ' + error.message); return; }
     closeNewTripModal();
     openTripDetail(name);
@@ -1775,8 +2019,9 @@
       current.tripLabel = null;
       el('tripAddRow').classList.remove('show');
     }
+    el('tripsDock').classList.toggle('show', name === 'trips');
     if (name === 'catalog') renderCatalog();
-    if (name === 'trips') renderTrips();
+    if (name === 'trips') renderTripsCalendar();
   }
   tabButtons.forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
