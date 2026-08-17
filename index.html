@@ -533,6 +533,14 @@
     box-shadow:var(--shadow-pop);padding:18px 20px calc(20px + env(safe-area-inset-bottom));
   }
   .modal h3{margin:0 0 14px;font-size:17px;font-weight:800;}
+  .modal-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;}
+  .modal-header h3{margin:0;}
+  .modal-close{
+    width:32px;height:32px;flex:none;border:none;border-radius:50%;
+    background:var(--surface);color:var(--ink);font-size:20px;line-height:1;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+  }
+  .modal-close:hover{background:var(--surface-2);}
   .modal-actions{display:flex;gap:10px;margin-top:16px;}
   .btn-secondary,.btn-primary{
     flex:1;height:44px;border:none;border-radius:var(--radius-pill);
@@ -593,7 +601,7 @@
   }
 </style>
 </head>
-<body class="dock-open">
+<body class="dock-open" data-tab="prices">
 <div class="app">
 
   <div class="topbar">
@@ -713,7 +721,6 @@
   <main class="view" id="catalogView">
     <div class="view-header">
       <h1>Catalog</h1>
-      <button class="text-link" id="clearCatalogBtn">Clear</button>
     </div>
     <input type="text" class="catalog-search" id="catalogSearch" placeholder="Search catalog…" autocomplete="off">
     <div class="active-filter-row" id="activeFilterRow" style="display:none;">
@@ -784,12 +791,12 @@
 
   <div class="modal-overlay" id="catalogPickerOverlay">
     <div class="modal modal-list">
-      <h3>Add from catalog</h3>
+      <div class="modal-header">
+        <h3>Add from catalog</h3>
+        <button type="button" class="modal-close" id="catalogPickerClose" aria-label="Close">×</button>
+      </div>
       <input type="text" class="catalog-search" id="catalogPickerSearch" placeholder="Search catalog…" autocomplete="off">
       <div class="catalog-list" id="catalogPickerList"></div>
-      <div class="modal-actions">
-        <button type="button" class="btn-secondary" id="catalogPickerCancel">Close</button>
-      </div>
     </div>
   </div>
 
@@ -1201,6 +1208,16 @@
     const { error } = await db.from('products').update(patch).eq('id', id);
     if (error) console.error('updateCatalogEntry', error);
   }
+  // Prevents duplicate catalog rows when the same product gets checked again — matches on
+  // brand+sku (getSku(url) is just the URL's last path segment, stable across re-checks of the
+  // same item across locales). Both runCheck and showManualMode call this before deciding
+  // whether to insert a new row or update the one that's already there.
+  async function findExistingBySku(brandLabel, sku) {
+    if (!db || !sku) return null;
+    const { data, error } = await db.from('products').select('*').eq('brand', brandLabel).eq('sku', sku).order('created_at', { ascending: false }).limit(1);
+    if (error) { console.error('findExistingBySku', error); return null; }
+    return (data && data[0]) || null;
+  }
 
   // Flight/hotel cost are per-trip figures, not per-product ones, so they live in their own
   // small `trips` table (trip_label -> flight_cost, hotel_cost) rather than on every product
@@ -1297,13 +1314,23 @@
     title.className = 'catalog-title';
     title.textContent = entry.product_name || entry.brand || 'Manual entry';
 
+    // Just the bare figures — FR / UK / sale price, then profit in green (or red if negative) —
+    // no brand, no "FR price:"-style labels, no status. Keeps each row to one glance.
     const sub = document.createElement('span');
     sub.className = 'catalog-sub';
     const priceBits = [];
     if (entry.eu_retail != null) priceBits.push('€' + Number(entry.eu_retail).toFixed(2));
     if (entry.uk_retail != null) priceBits.push('£' + Number(entry.uk_retail).toFixed(2));
-    const dateStr = entry.created_at ? new Date(entry.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
-    sub.textContent = [entry.brand, priceBits.join(' · '), entry.trip_label, dateStr].filter(Boolean).join(' · ');
+    if (entry.sale_price != null) priceBits.push('£' + Number(entry.sale_price).toFixed(2));
+    sub.textContent = priceBits.join(' · ');
+    const profitVal = entry.total_profit != null ? entry.total_profit : entry.profit;
+    if (profitVal != null) {
+      if (priceBits.length) sub.appendChild(document.createTextNode(' · '));
+      const profitSpan = document.createElement('span');
+      profitSpan.className = profitVal >= 0 ? 'trip-net-pos' : 'trip-net-neg';
+      profitSpan.textContent = (profitVal >= 0 ? '+' : '') + '£' + Number(profitVal).toFixed(2);
+      sub.appendChild(profitSpan);
+    }
 
     const text = document.createElement('span');
     text.className = 'catalog-text';
@@ -1318,20 +1345,7 @@
     openBtn.appendChild(chevWrap.firstChild);
     openBtn.addEventListener('click', () => onOpen(entry));
 
-    const statusBtn = document.createElement('button');
-    statusBtn.type = 'button';
-    statusBtn.className = 'status-pill';
-    renderStatusPill(statusBtn, entry.status || 'stock');
-    statusBtn.addEventListener('click', async () => {
-      const next = cycleStatus(entry.status || 'stock');
-      entry.status = next;
-      renderStatusPill(statusBtn, next);
-      await updateCatalogEntry(entry.id, { status: next });
-      if (current.catalogId === entry.id) renderStatusPill(el('statusBtn'), next);
-    });
-
     item.appendChild(openBtn);
-    item.appendChild(statusBtn);
     return item;
   }
 
@@ -1389,14 +1403,6 @@
     }
     recalc();
   }
-
-  el('clearCatalogBtn').addEventListener('click', async () => {
-    if (!db) return;
-    if (!confirm('Delete the entire catalog? This removes every product on every device and can’t be undone.')) return;
-    const { error } = await db.from('products').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    if (error) { alert('Failed to clear catalog: ' + error.message); return; }
-    renderCatalog();
-  });
 
   el('catalogSearch').addEventListener('input', applyCatalogFilters);
 
@@ -1513,6 +1519,12 @@
       openBtn.appendChild(chevWrap.firstChild);
       openBtn.addEventListener('click', () => openTripDetail(name));
 
+      // Flight/hotel cost are only editable on the Trip Detail page (openTripDetail) — the
+      // list here just reads whatever's already saved to compute net profit.
+      const flightCost = (flightCosts[name] && flightCosts[name].flight_cost) || 0;
+      const hotelCost = (flightCosts[name] && flightCosts[name].hotel_cost) || 0;
+      const net = trips[name].profit - flightCost - hotelCost;
+
       const stats = document.createElement('div');
       stats.className = 'trip-stats';
       const revenueSpan = document.createElement('span');
@@ -1520,54 +1532,15 @@
       const profitSpan = document.createElement('span');
       profitSpan.innerHTML = 'Profit <b>' + fmtGBP(trips[name].profit) + '</b>';
       const netSpan = document.createElement('span');
+      netSpan.innerHTML = 'Net profit <b class="' + (net >= 0 ? 'trip-net-pos' : 'trip-net-neg') + '">' + fmtGBP(net) + '</b>';
       stats.appendChild(revenueSpan);
       stats.appendChild(profitSpan);
       stats.appendChild(netSpan);
-
-      const costsRow = document.createElement('div');
-      costsRow.className = 'trip-costs-row';
-
-      function makeCostInput(labelText, field) {
-        const row = document.createElement('div');
-        row.className = 'trip-flight-row';
-        const label = document.createElement('label');
-        label.textContent = labelText;
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.step = '0.01';
-        input.min = '0';
-        const existing = flightCosts[name] && flightCosts[name][field];
-        input.value = existing || '';
-        input.placeholder = '0.00';
-        row.appendChild(label);
-        row.appendChild(input);
-        input.addEventListener('change', () => {
-          const cost = parseFloat(input.value);
-          if (!flightCosts[name]) flightCosts[name] = { flight_cost: 0, hotel_cost: 0 };
-          flightCosts[name][field] = isNaN(cost) ? 0 : cost;
-          saveTripCost(name, field, isNaN(cost) ? 0 : cost);
-          renderNet();
-        });
-        return { row, input };
-      }
-      const flightField = makeCostInput('Flight £', 'flight_cost');
-      const hotelField = makeCostInput('Hotel £', 'hotel_cost');
-      costsRow.appendChild(flightField.row);
-      costsRow.appendChild(hotelField.row);
-
-      function renderNet() {
-        const flightCost = parseFloat(flightField.input.value) || 0;
-        const hotelCost = parseFloat(hotelField.input.value) || 0;
-        const net = trips[name].profit - flightCost - hotelCost;
-        netSpan.innerHTML = 'Net profit <b class="' + (net >= 0 ? 'trip-net-pos' : 'trip-net-neg') + '">' + fmtGBP(net) + '</b>';
-      }
-      renderNet();
 
       const row = document.createElement('div');
       row.className = 'catalog-item trip-item';
       row.appendChild(openBtn);
       row.appendChild(stats);
-      row.appendChild(costsRow);
       wrap.appendChild(row);
     });
   }
@@ -1728,7 +1701,7 @@
   }
 
   el('tripAddCatalogBtn').addEventListener('click', () => openCatalogPicker(currentTripDetailLabel));
-  el('catalogPickerCancel').addEventListener('click', closeCatalogPicker);
+  el('catalogPickerClose').addEventListener('click', closeCatalogPicker);
   el('catalogPickerOverlay').addEventListener('click', (e) => { if (e.target === el('catalogPickerOverlay')) closeCatalogPicker(); });
   el('catalogPickerSearch').addEventListener('input', () => renderCatalogPickerList(el('catalogPickerSearch').value));
 
@@ -2120,12 +2093,20 @@
     current.brandKey = brandKey;
     current.sku = getSku(ukUrl) || getSku(frUrl);
 
+    // Two separate "have we seen this before" sources: the shared Supabase catalog (existing —
+    // takes priority, since it's the real record and lets us update it instead of duplicating
+    // it) and the local known-SKU cache (cached — a same-browser fallback, see CLAUDE.md).
+    const existing = await findExistingBySku(brandLabel, current.sku);
     const cached = getSkuEntry(brandKey, current.sku);
-    const initialName = (cached && cached.productName) || guessedName || null;
-    const initialUkPrice = cached ? cached.ukPrice : null;
-    const initialFrPrice = cached ? cached.frPrice : null;
+    const initialName = (existing && existing.product_name) || (cached && cached.productName) || guessedName || null;
+    const initialUkPrice = existing ? existing.uk_retail : (cached ? cached.ukPrice : null);
+    const initialFrPrice = existing ? existing.eu_retail : (cached ? cached.frPrice : null);
+    const initialImage = existing ? (existing.image_url || null) : null;
 
-    if (cached) {
+    if (existing) {
+      current.nameSource = existing.product_name ? 'user' : (guessedName ? 'guess' : null);
+      el('manualBannerText').textContent = 'Already in your catalog (checked ' + timeAgo(new Date(existing.created_at).getTime()) + ') — updating that entry instead of adding a duplicate.';
+    } else if (cached) {
       current.nameSource = cached.productName ? 'user' : (guessedName ? 'guess' : null);
       el('manualBannerText').textContent = 'You checked this ' + brandLabel + ' item before (' + timeAgo(cached.lastSeenTs) + ') — pre-filled from that, but prices can change, so double-check.';
     } else {
@@ -2133,25 +2114,34 @@
       el('manualBannerText').textContent = brandLabel + ' blocks automated price checks — open the two listings below, then type the prices you see into the highlighted fields.';
     }
     el('manualBanner').classList.add('show');
-    renderCard(brandLabel, initialName, null, ukUrl, frUrl, initialUkPrice, initialFrPrice, current.rate,
+    renderCard(brandLabel, initialName, initialImage, ukUrl, frUrl, initialUkPrice, initialFrPrice, current.rate,
+      existing ? 'Already in your catalog — updating that entry rather than creating a new one.' :
       cached ? 'Pre-filled from a previous check of this item — worth a quick glance before you commit.' : 'Enter both prices by hand — this brand can’t be scraped automatically.');
     el('frPrice').placeholder = 'tap here';
     el('ukPrice').placeholder = 'tap here';
-    renderStatusPill(el('statusBtn'), 'stock');
+    renderStatusPill(el('statusBtn'), (existing && existing.status) || 'stock');
     setStatus('');
     let focusTarget = null;
     if (!initialName) focusTarget = 'prodName';
     else if (initialUkPrice == null && initialFrPrice == null) focusTarget = 'frPrice';
     if (focusTarget) setTimeout(() => el(focusTarget).focus(), 300);
 
-    const row = await addCatalogEntry({
-      brand: brandLabel, product_name: initialName, sku: current.sku,
-      url_uk: ukUrl, url_fr: frUrl,
-      eu_retail: initialFrPrice, uk_retail: initialUkPrice
-    });
-    if (!row) { setStatus('Couldn’t save to the catalog — check your Supabase settings.', true); return; }
-    const id = row.id;
-    current.catalogId = id;
+    let id;
+    if (existing) {
+      id = existing.id;
+      current.catalogId = id;
+      el('quantityInput').value = existing.quantity != null ? existing.quantity : 1;
+      await updateCatalogEntry(id, { url_uk: ukUrl, url_fr: frUrl });
+    } else {
+      const row = await addCatalogEntry({
+        brand: brandLabel, product_name: initialName, sku: current.sku,
+        url_uk: ukUrl, url_fr: frUrl,
+        eu_retail: initialFrPrice, uk_retail: initialUkPrice
+      });
+      if (!row) { setStatus('Couldn’t save to the catalog — check your Supabase settings.', true); return; }
+      id = row.id;
+      current.catalogId = id;
+    }
 
     fetchRate().then(rate => {
       current.rate = rate;
@@ -2159,9 +2149,10 @@
       recalc();
     }).catch(() => setStatus('Rate lookup failed — try "refresh rate" on the card.', true));
 
-    // Skip Serper entirely once this exact item already has a confirmed price cached —
+    // Skip Serper entirely once this exact item already has a confirmed price on record —
     // no need to spend an API call re-deriving what was already confirmed once.
-    if (!cached || (cached.ukPrice == null && cached.frPrice == null)) {
+    const hasConfirmedPrice = initialUkPrice != null || initialFrPrice != null;
+    if (!hasConfirmedPrice) {
       trySerperFill(id, ukUrl, frUrl, brandLabel);
     }
   }
@@ -2176,31 +2167,48 @@
     resetCardMode();
     checkBtn.disabled = true; manualCheckBtn.disabled = true;
     setStatus('Scraping both listings — this can take up to a minute…');
+    const sku = getSku(ukUrl) || getSku(frUrl);
     try {
-      const [info, rate] = await Promise.all([
+      const [info, rate, existing] = await Promise.all([
         extractInfo(ukUrl, frUrl, token).catch(err => ({
           productName: null, imageUrl: null, ukPrice: null, frPrice: null,
           notes: 'Scrape failed: ' + (err && err.message ? err.message : 'unknown error') + ' — enter prices by hand below.'
         })),
-        fetchRate().catch(() => null)
+        fetchRate().catch(() => null),
+        findExistingBySku(brandLabel, sku)
       ]);
       if (!rate) setStatus('Rate lookup failed — using none. Try "refresh rate" on the card.', true);
-      else setStatus('');
+      else setStatus(existing ? 'Already in your catalog — updating that entry.' : '');
       current.catalogId = null;
-      current.nameSource = info.productName ? 'scrape' : null;
-      renderCard(brandLabel, info.productName, info.imageUrl, ukUrl, frUrl, info.ukPrice, info.frPrice, rate, info.notes);
-      renderStatusPill(el('statusBtn'), 'stock');
-      const row = await addCatalogEntry({
-        brand: brandLabel, product_name: info.productName, sku: getSku(ukUrl) || getSku(frUrl),
+      current.nameSource = info.productName ? 'scrape' : (existing && existing.product_name ? 'user' : null);
+      const productName = info.productName || (existing && existing.product_name) || null;
+      const imageUrl = info.imageUrl || (existing && existing.image_url) || null;
+      // A failed/partial scrape shouldn't wipe out a price this item already had on record —
+      // only trust the fresh scrape's number when it actually found one.
+      const ukPrice = info.ukPrice != null ? info.ukPrice : (existing ? existing.uk_retail : null);
+      const frPrice = info.frPrice != null ? info.frPrice : (existing ? existing.eu_retail : null);
+      renderCard(brandLabel, productName, imageUrl, ukUrl, frUrl, ukPrice, frPrice, rate, info.notes);
+      renderStatusPill(el('statusBtn'), (existing && existing.status) || 'stock');
+      const fields = {
+        brand: brandLabel, product_name: productName, sku,
         url_uk: ukUrl, url_fr: frUrl,
-        image_url: info.imageUrl, eu_retail: info.frPrice, uk_retail: info.ukPrice
-      });
-      if (row) {
-        current.catalogId = row.id;
+        image_url: imageUrl, eu_retail: frPrice, uk_retail: ukPrice
+      };
+      if (existing) {
+        current.catalogId = existing.id;
+        el('quantityInput').value = existing.quantity != null ? existing.quantity : 1;
+        await updateCatalogEntry(existing.id, fields);
         recalc();
-        if (!info.imageUrl) tryImageFallback(row.id, ukUrl, frUrl);
+        if (!imageUrl) tryImageFallback(existing.id, ukUrl, frUrl);
       } else {
-        setStatus('Couldn’t save to the catalog — check your Supabase settings.', true);
+        const row = await addCatalogEntry(fields);
+        if (row) {
+          current.catalogId = row.id;
+          recalc();
+          if (!imageUrl) tryImageFallback(row.id, ukUrl, frUrl);
+        } else {
+          setStatus('Couldn’t save to the catalog — check your Supabase settings.', true);
+        }
       }
     } catch (err) {
       setStatus('Something went wrong. Check the links manually below.', true);

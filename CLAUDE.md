@@ -38,6 +38,17 @@ There is no build/lint/test tooling. To validate a change:
 
 ## Architecture
 
+### Tab state lives on `<body data-tab="...">`, not just in JS
+
+`switchTab()` sets `document.body.dataset.tab`, and CSS keys off it — e.g. the docked search
+bar only shows via `body.dock-open[data-tab="prices"] .search-dock{display:block;}`. The
+`<body>` tag **must** carry `data-tab="prices"` in the static HTML itself (not only set at
+runtime), matching `id="tabPrices"` already having `class="tab-btn active"` in the markup —
+otherwise, on a completely fresh page load before any tab is ever clicked, the attribute is
+simply absent and the entire docked search input (the app's main entry point) is invisible.
+This exact regression shipped invisibly for a while because every manual/automated test
+happened to click some other tab first, incidentally setting the attribute as a side effect.
+
 ### Two independent data-acquisition paths, chosen per brand
 
 `BRANDS` (top of the script) maps each domain to a `build(url)` function that derives the
@@ -140,6 +151,24 @@ build their own narrower patch object without `image_url` (e.g. the status-pill'
 `{ status: next }`, or tagging a trip with `{ trip_label }`) are unaffected. Check with a
 lightweight probe (`select=id,image_url&limit=1` against `/rest/v1/products`) before assuming
 catalog editing works end-to-end; the anon key can't run the `alter table` itself.
+
+Re-checking the same product (same brand + `sku`) updates the existing row instead of inserting
+a new one — `findExistingBySku(brandLabel, sku)` runs before both `runCheck` and
+`showManualMode` decide whether to `addCatalogEntry` or `updateCatalogEntry`. This matters
+because pasting the same link twice used to silently create a second row every time; a real
+example of exactly that (one Louis Vuitton item checked 4 times in one session, 3 of the rows
+completely empty) was found and cleaned up in the live catalog while building this. When
+merging in a fresh scrape's result (`runCheck` only — `showManualMode` never overwrites with a
+"fresh" value since it doesn't scrape), a `null`/failed price from *this* check must never
+clobber a good price the existing row already had — always merge as
+`info.ukPrice != null ? info.ukPrice : existing.uk_retail`, never just `info.ukPrice`.
+
+Catalog rows (`buildCatalogRow`, shared by the Catalog tab, Trip Detail, and the catalog
+picker) intentionally show as little as possible: no brand text, no status pill (status is only
+editable from the full card now). The sub-line is just the bare figures in a fixed order — FR
+retail, UK retail, sale price, then profit (green if positive, red if negative via
+`trip-net-pos`/`trip-net-neg`, the same classes Trips uses) — no "FR price:"-style labels, no
+trip label, no date.
 
 ### Trips tab (Catalog `trip_label` values shown as trips, plus its own `trips` table)
 
