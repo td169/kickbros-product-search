@@ -518,6 +518,54 @@
     font:inherit;font-size:13px;width:90px;padding:5px 8px;border-radius:8px;
     border:1px solid var(--line);background:var(--field-bg);color:var(--ink);
   }
+  .trip-costs-row{display:flex;flex-wrap:wrap;gap:10px 18px;margin-bottom:2px;}
+  .trip-costs-row .trip-flight-row{padding:0;}
+
+  /* modal (New trip / Add from catalog) */
+  .modal-overlay{
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
+    z-index:40;align-items:flex-end;justify-content:center;
+  }
+  .modal-overlay.open{display:flex;}
+  .modal{
+    width:100%;max-width:460px;max-height:85vh;overflow-y:auto;
+    background:var(--card-bg);border-radius:var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow:var(--shadow-pop);padding:18px 20px calc(20px + env(safe-area-inset-bottom));
+  }
+  .modal h3{margin:0 0 14px;font-size:17px;font-weight:800;}
+  .modal-actions{display:flex;gap:10px;margin-top:16px;}
+  .btn-secondary,.btn-primary{
+    flex:1;height:44px;border:none;border-radius:var(--radius-pill);
+    font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:background .15s;
+  }
+  .btn-secondary{background:var(--surface);color:var(--ink);}
+  .btn-secondary:hover{background:var(--surface-2);}
+  .btn-primary{background:var(--ink);color:var(--on-ink);}
+  .btn-primary:hover{background:var(--ink-hover);}
+  .modal-list .catalog-search{margin-bottom:10px;}
+
+  /* trip detail */
+  .trip-add-actions{display:flex;gap:10px;margin:14px 0;}
+  .trip-add-actions .btn-pill{flex:1;}
+  .trip-link-dock{display:flex;gap:8px;margin-bottom:14px;}
+  .trip-link-dock input{
+    flex:1;font:inherit;font-size:14px;padding:10px 12px;border-radius:var(--radius-sm);
+    border:none;background:var(--surface);color:var(--ink);
+  }
+  .trip-link-dock button{
+    width:42px;height:42px;flex:none;border:none;border-radius:50%;
+    background:var(--ink);color:var(--on-ink);font-size:16px;cursor:pointer;
+  }
+
+  /* "Add to trip" button on the product card */
+  .trip-add-row{display:none;justify-content:flex-end;padding-top:10px;}
+  .trip-add-row.show{display:flex;}
+  .btn-add-trip{
+    height:38px;padding:0 18px;border:none;border-radius:var(--radius-pill);
+    background:var(--ink);color:var(--on-ink);font-family:inherit;font-size:13.5px;font-weight:700;
+    cursor:pointer;transition:background .15s;
+  }
+  .btn-add-trip:hover{background:var(--ink-hover);}
 
   /* bottom tab bar */
   .tabbar{
@@ -616,7 +664,7 @@
 
         <div class="ledger-row hero">
           <div class="label">Your sale price</div>
-          <div class="val" id="saleVal">—</div>
+          <div class="val"><input type="number" id="saleVal" step="0.01">&nbsp;£</div>
         </div>
         <div class="ledger-row sub">
           <div class="label">vs UK RRP</div>
@@ -654,6 +702,9 @@
         <span class="status-row-label">Status</span>
         <button type="button" class="status-pill" id="statusBtn" data-status="stock">Stock</button>
       </div>
+      <div class="trip-add-row" id="tripAddRow">
+        <button type="button" class="btn-add-trip" id="addToTripBtn">Add to trip →</button>
+      </div>
     </div>
 
     <p class="disclaimer">Prices are pulled live via Apify using your own token (Settings) — a scrape can still miss, so the FR/UK figures are always editable. Dior and Louis Vuitton block automated scraping, so those go straight to manual entry.</p>
@@ -674,10 +725,73 @@
   </main>
 
   <main class="view" id="tripsView">
-    <div class="view-header"><h1>Trips</h1></div>
+    <div class="view-header"><h1>Trips</h1><button class="text-link" id="newTripBtn">New trip</button></div>
     <div class="catalog-list" id="tripsList"></div>
     <p class="empty-state" id="tripsEmpty">No trips yet — only items tagged with a "PARIS &lt;month&gt; &lt;year&gt;" trip label (like the old Excel import) show up here.</p>
   </main>
+
+  <main class="view" id="tripDetailView">
+    <div class="view-header">
+      <button class="text-link" id="tripDetailBack">← Trips</button>
+    </div>
+    <h1 id="tripDetailTitle">—</h1>
+    <div class="trip-stats" id="tripDetailStats"></div>
+    <div class="trip-costs-row">
+      <div class="trip-flight-row">
+        <label>Flight £</label>
+        <input type="number" id="tripDetailFlight" step="0.01" min="0" placeholder="0.00">
+      </div>
+      <div class="trip-flight-row">
+        <label>Hotel £</label>
+        <input type="number" id="tripDetailHotel" step="0.01" min="0" placeholder="0.00">
+      </div>
+    </div>
+
+    <div class="trip-add-actions">
+      <button type="button" class="btn-pill" id="tripAddLinkBtn">+ Paste a link</button>
+      <button type="button" class="btn-pill" id="tripAddCatalogBtn">+ From catalog</button>
+    </div>
+    <div class="trip-link-dock" id="tripLinkDock" style="display:none;">
+      <input type="text" id="tripLinkInput" placeholder="Paste a product link…">
+      <button type="button" id="tripLinkGoBtn">→</button>
+    </div>
+
+    <div class="catalog-list" id="tripDetailList"></div>
+    <p class="empty-state" id="tripDetailEmpty">No products in this trip yet.</p>
+  </main>
+
+  <div class="modal-overlay" id="newTripOverlay">
+    <div class="modal">
+      <h3>New trip</h3>
+      <div class="field">
+        <label>Trip name</label>
+        <input type="text" id="newTripName" placeholder="PARIS AUGUST 2026" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Flight cost <span class="hint">£</span></label>
+        <input type="number" id="newTripFlight" step="0.01" min="0" placeholder="0.00">
+      </div>
+      <div class="field">
+        <label>Hotel cost <span class="hint">£</span></label>
+        <input type="number" id="newTripHotel" step="0.01" min="0" placeholder="0.00">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="newTripCancel">Cancel</button>
+        <button type="button" class="btn-primary" id="newTripCreate">Create trip</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="catalogPickerOverlay">
+    <div class="modal modal-list">
+      <h3>Add from catalog</h3>
+      <input type="text" class="catalog-search" id="catalogPickerSearch" placeholder="Search catalog…" autocomplete="off">
+      <div class="catalog-list" id="catalogPickerList"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="catalogPickerCancel">Close</button>
+      </div>
+    </div>
+  </div>
 
   <main class="view" id="settingsView">
     <div class="view-header"><h1>Settings</h1></div>
@@ -818,7 +932,11 @@
   const card = el('card');
 
   let settings = { refund: 12, margin: 8.81, reseller: 3.04 };
-  let current = { rate:null, catalogId:null, nameSource:null, sku:null, brandKey:null, computed:null, imageUrl:null };
+  let current = { rate:null, catalogId:null, nameSource:null, sku:null, brandKey:null, computed:null, imageUrl:null, tripLabel:null };
+  // Whether the user has manually typed into the sale-price field for the product currently on
+  // screen — once true, recalc() stops overwriting it with the freshly suggested price, since
+  // this field doubles as "the actual final price a customer paid" when adding to a trip.
+  let saleOverridden = false;
 
   const TOKEN_KEY = 'kickbros_apify_token';
   const apifyTokenInput = el('setApifyToken');
@@ -1084,20 +1202,24 @@
     if (error) console.error('updateCatalogEntry', error);
   }
 
-  // Flight cost is a per-trip figure, not a per-product one, so it lives in its own small
-  // `trips` table (trip_label -> flight_cost) rather than on every product row.
+  // Flight/hotel cost are per-trip figures, not per-product ones, so they live in their own
+  // small `trips` table (trip_label -> flight_cost, hotel_cost) rather than on every product
+  // row. This table also doubles as the record of which trips exist at all — a brand-new trip
+  // created via "New trip" has a row here before any product is ever tagged with its label.
   async function loadTripCosts() {
     if (!db) return {};
-    const { data, error } = await db.from('trips').select('trip_label, flight_cost');
+    const { data, error } = await db.from('trips').select('trip_label, flight_cost, hotel_cost');
     if (error) { console.error('loadTripCosts', error); return {}; }
     const map = {};
-    (data || []).forEach(t => { map[t.trip_label] = t.flight_cost; });
+    (data || []).forEach(t => { map[t.trip_label] = { flight_cost: t.flight_cost || 0, hotel_cost: t.hotel_cost || 0 }; });
     return map;
   }
-  async function saveTripFlightCost(tripLabel, cost) {
+  // Upserts a single field — PostgREST's upsert only touches the columns given, so setting just
+  // flight_cost on an existing row leaves hotel_cost (and vice versa) untouched.
+  async function saveTripCost(tripLabel, field, value) {
     if (!db) return;
-    const { error } = await db.from('trips').upsert({ trip_label: tripLabel, flight_cost: cost });
-    if (error) console.error('saveTripFlightCost', tripLabel, error);
+    const { error } = await db.from('trips').upsert({ trip_label: tripLabel, [field]: value });
+    if (error) console.error('saveTripCost', tripLabel, field, error);
   }
 
   function renderStatusPill(btn, status) {
@@ -1148,6 +1270,71 @@
     renderCatalogList(filtered, catalogRows.length === 0);
   }
 
+  // Shared row builder — used by the main Catalog list and the Trip Detail item list, which
+  // otherwise duplicated this element-by-element. `onOpen` gets called with the entry when the
+  // avatar/name/chevron part is tapped (opening it always means jumping to the editable card).
+  function buildCatalogRow(entry, onOpen) {
+    const item = document.createElement('div');
+    item.className = 'catalog-item';
+
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'catalog-open';
+
+    const avatar = document.createElement('span');
+    avatar.className = 'catalog-avatar';
+    if (entry.image_url) {
+      const img = document.createElement('img');
+      img.src = entry.image_url;
+      img.alt = '';
+      img.onerror = () => { img.remove(); avatar.textContent = initials(entry.brand); };
+      avatar.appendChild(img);
+    } else {
+      avatar.textContent = initials(entry.brand);
+    }
+
+    const title = document.createElement('span');
+    title.className = 'catalog-title';
+    title.textContent = entry.product_name || entry.brand || 'Manual entry';
+
+    const sub = document.createElement('span');
+    sub.className = 'catalog-sub';
+    const priceBits = [];
+    if (entry.eu_retail != null) priceBits.push('€' + Number(entry.eu_retail).toFixed(2));
+    if (entry.uk_retail != null) priceBits.push('£' + Number(entry.uk_retail).toFixed(2));
+    const dateStr = entry.created_at ? new Date(entry.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+    sub.textContent = [entry.brand, priceBits.join(' · '), entry.trip_label, dateStr].filter(Boolean).join(' · ');
+
+    const text = document.createElement('span');
+    text.className = 'catalog-text';
+    text.appendChild(title);
+    text.appendChild(sub);
+
+    const chevWrap = document.createElement('span');
+    chevWrap.innerHTML = CHEV_SVG;
+
+    openBtn.appendChild(avatar);
+    openBtn.appendChild(text);
+    openBtn.appendChild(chevWrap.firstChild);
+    openBtn.addEventListener('click', () => onOpen(entry));
+
+    const statusBtn = document.createElement('button');
+    statusBtn.type = 'button';
+    statusBtn.className = 'status-pill';
+    renderStatusPill(statusBtn, entry.status || 'stock');
+    statusBtn.addEventListener('click', async () => {
+      const next = cycleStatus(entry.status || 'stock');
+      entry.status = next;
+      renderStatusPill(statusBtn, next);
+      await updateCatalogEntry(entry.id, { status: next });
+      if (current.catalogId === entry.id) renderStatusPill(el('statusBtn'), next);
+    });
+
+    item.appendChild(openBtn);
+    item.appendChild(statusBtn);
+    return item;
+  }
+
   function renderCatalogList(list, catalogEmpty) {
     const wrap = el('catalogList');
     const empty = el('catalogEmpty');
@@ -1160,73 +1347,16 @@
       return;
     }
     empty.style.display = 'none';
-    list.forEach(entry => {
-      const item = document.createElement('div');
-      item.className = 'catalog-item';
-
-      const openBtn = document.createElement('button');
-      openBtn.type = 'button';
-      openBtn.className = 'catalog-open';
-
-      const avatar = document.createElement('span');
-      avatar.className = 'catalog-avatar';
-      if (entry.image_url) {
-        const img = document.createElement('img');
-        img.src = entry.image_url;
-        img.alt = '';
-        img.onerror = () => { img.remove(); avatar.textContent = initials(entry.brand); };
-        avatar.appendChild(img);
-      } else {
-        avatar.textContent = initials(entry.brand);
-      }
-
-      const title = document.createElement('span');
-      title.className = 'catalog-title';
-      title.textContent = entry.product_name || entry.brand || 'Manual entry';
-
-      const sub = document.createElement('span');
-      sub.className = 'catalog-sub';
-      const priceBits = [];
-      if (entry.eu_retail != null) priceBits.push('€' + Number(entry.eu_retail).toFixed(2));
-      if (entry.uk_retail != null) priceBits.push('£' + Number(entry.uk_retail).toFixed(2));
-      const dateStr = entry.created_at ? new Date(entry.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
-      sub.textContent = [entry.brand, priceBits.join(' · '), entry.trip_label, dateStr].filter(Boolean).join(' · ');
-
-      const text = document.createElement('span');
-      text.className = 'catalog-text';
-      text.appendChild(title);
-      text.appendChild(sub);
-
-      const chevWrap = document.createElement('span');
-      chevWrap.innerHTML = CHEV_SVG;
-
-      openBtn.appendChild(avatar);
-      openBtn.appendChild(text);
-      openBtn.appendChild(chevWrap.firstChild);
-      openBtn.addEventListener('click', () => reopenCatalogEntry(entry));
-
-      const statusBtn = document.createElement('button');
-      statusBtn.type = 'button';
-      statusBtn.className = 'status-pill';
-      renderStatusPill(statusBtn, entry.status || 'stock');
-      statusBtn.addEventListener('click', async () => {
-        const next = cycleStatus(entry.status || 'stock');
-        entry.status = next;
-        renderStatusPill(statusBtn, next);
-        await updateCatalogEntry(entry.id, { status: next });
-        if (current.catalogId === entry.id) renderStatusPill(el('statusBtn'), next);
-      });
-
-      item.appendChild(openBtn);
-      item.appendChild(statusBtn);
-      wrap.appendChild(item);
-    });
+    list.forEach(entry => wrap.appendChild(buildCatalogRow(entry, reopenCatalogEntry)));
   }
 
   async function reopenCatalogEntry(entry) {
     switchTab('prices');
     resetCardMode();
     current.catalogId = null;
+    // Reopening an existing item is never "adding to a trip" — that context only applies to a
+    // check just started from the trip-detail "paste a link" flow.
+    current.tripLabel = null;
     current.nameSource = entry.product_name ? 'user' : null;
     // The schema doesn't track which brands are scrape-blocked (that's app config, not data) —
     // infer manual-mode styling from whether the stored brand name matches one.
@@ -1250,6 +1380,13 @@
     el('quantityInput').value = entry.quantity != null ? entry.quantity : 1;
     renderStatusPill(el('statusBtn'), entry.status || 'stock');
     current.catalogId = entry.id;
+    // Treat the stored sale_price as a locked-in override, not a fresh suggestion — reopening
+    // an entry (e.g. to fix its FR/UK RRP) shouldn't silently move a price that was already
+    // finalised, especially a trip's actual recorded sale price.
+    if (entry.sale_price != null) {
+      el('saleVal').value = entry.sale_price;
+      saleOverridden = true;
+    }
     recalc();
   }
 
@@ -1320,6 +1457,7 @@
       return;
     }
     if (!catalogRows.length) catalogRows = await loadCatalog();
+    const flightCosts = await loadTripCosts();
 
     const trips = {};
     catalogRows.forEach(e => {
@@ -1337,6 +1475,11 @@
         t.profit += e.total_profit != null ? e.total_profit : (e.profit != null ? e.profit * qty : 0);
       }
     });
+    // A trip explicitly created via "New trip" has a row in the `trips` table before it has
+    // any products at all — show those too, not just labels derived from existing catalog rows.
+    Object.keys(flightCosts).forEach(name => {
+      if (!trips[name]) trips[name] = { count: 0, lastTs: 0, revenue: 0, profit: 0 };
+    });
     const names = Object.keys(trips).sort((a, b) => trips[b].lastTs - trips[a].lastTs);
 
     if (!names.length) {
@@ -1344,8 +1487,6 @@
       return;
     }
     empty.style.display = 'none';
-
-    const flightCosts = await loadTripCosts();
 
     names.forEach(name => {
       const openBtn = document.createElement('button');
@@ -1370,12 +1511,7 @@
 
       openBtn.appendChild(text);
       openBtn.appendChild(chevWrap.firstChild);
-      openBtn.addEventListener('click', () => {
-        el('catalogSearch').value = name;
-        catalogBrandFilter = null;
-        switchTab('catalog');
-        applyCatalogFilters();
-      });
+      openBtn.addEventListener('click', () => openTripDetail(name));
 
       const stats = document.createElement('div');
       stats.className = 'trip-stats';
@@ -1388,40 +1524,213 @@
       stats.appendChild(profitSpan);
       stats.appendChild(netSpan);
 
-      const flightRow = document.createElement('div');
-      flightRow.className = 'trip-flight-row';
-      const label = document.createElement('label');
-      label.textContent = 'Flight cost £';
-      const input = document.createElement('input');
-      input.type = 'number';
-      input.step = '0.01';
-      input.min = '0';
-      input.value = flightCosts[name] != null ? flightCosts[name] : '';
-      input.placeholder = '0.00';
-      flightRow.appendChild(label);
-      flightRow.appendChild(input);
+      const costsRow = document.createElement('div');
+      costsRow.className = 'trip-costs-row';
+
+      function makeCostInput(labelText, field) {
+        const row = document.createElement('div');
+        row.className = 'trip-flight-row';
+        const label = document.createElement('label');
+        label.textContent = labelText;
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = '0.01';
+        input.min = '0';
+        const existing = flightCosts[name] && flightCosts[name][field];
+        input.value = existing || '';
+        input.placeholder = '0.00';
+        row.appendChild(label);
+        row.appendChild(input);
+        input.addEventListener('change', () => {
+          const cost = parseFloat(input.value);
+          if (!flightCosts[name]) flightCosts[name] = { flight_cost: 0, hotel_cost: 0 };
+          flightCosts[name][field] = isNaN(cost) ? 0 : cost;
+          saveTripCost(name, field, isNaN(cost) ? 0 : cost);
+          renderNet();
+        });
+        return { row, input };
+      }
+      const flightField = makeCostInput('Flight £', 'flight_cost');
+      const hotelField = makeCostInput('Hotel £', 'hotel_cost');
+      costsRow.appendChild(flightField.row);
+      costsRow.appendChild(hotelField.row);
 
       function renderNet() {
-        const flightCost = parseFloat(input.value) || 0;
-        const net = trips[name].profit - flightCost;
+        const flightCost = parseFloat(flightField.input.value) || 0;
+        const hotelCost = parseFloat(hotelField.input.value) || 0;
+        const net = trips[name].profit - flightCost - hotelCost;
         netSpan.innerHTML = 'Net profit <b class="' + (net >= 0 ? 'trip-net-pos' : 'trip-net-neg') + '">' + fmtGBP(net) + '</b>';
       }
       renderNet();
-      input.addEventListener('change', () => {
-        const cost = parseFloat(input.value);
-        flightCosts[name] = isNaN(cost) ? 0 : cost;
-        saveTripFlightCost(name, isNaN(cost) ? 0 : cost);
-        renderNet();
-      });
 
       const row = document.createElement('div');
       row.className = 'catalog-item trip-item';
       row.appendChild(openBtn);
       row.appendChild(stats);
-      row.appendChild(flightRow);
+      row.appendChild(costsRow);
       wrap.appendChild(row);
     });
   }
+
+  // ---- trip detail ----
+  let currentTripDetailLabel = null;
+
+  function openTripDetail(label) {
+    Object.keys(views).forEach(k => views[k].classList.remove('active'));
+    el('tripDetailView').classList.add('active');
+    tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === 'trips'));
+    document.body.dataset.tab = 'trips';
+    filterPanel.classList.remove('open');
+    el('tripLinkDock').style.display = 'none';
+    renderTripDetail(label);
+  }
+
+  async function renderTripDetail(label) {
+    currentTripDetailLabel = label;
+    el('tripDetailTitle').textContent = label;
+    if (!catalogRows.length) catalogRows = await loadCatalog();
+    const items = catalogRows.filter(e => e.trip_label === label);
+    const sold = items.filter(e => e.status === 'sold');
+    const revenue = sold.reduce((sum, e) => sum + (e.sale_price != null ? e.sale_price * (e.quantity || 1) : 0), 0);
+    const profit = sold.reduce((sum, e) => {
+      const qty = e.quantity || 1;
+      return sum + (e.total_profit != null ? e.total_profit : (e.profit != null ? e.profit * qty : 0));
+    }, 0);
+
+    const costs = await loadTripCosts();
+    const flightCost = (costs[label] && costs[label].flight_cost) || 0;
+    const hotelCost = (costs[label] && costs[label].hotel_cost) || 0;
+    el('tripDetailFlight').value = flightCost || '';
+    el('tripDetailHotel').value = hotelCost || '';
+    const net = profit - flightCost - hotelCost;
+    el('tripDetailStats').innerHTML =
+      items.length + (items.length === 1 ? ' item' : ' items') +
+      ' · Revenue <b>' + fmtGBP(revenue) + '</b> · Profit <b>' + fmtGBP(profit) + '</b> · ' +
+      'Net profit <b class="' + (net >= 0 ? 'trip-net-pos' : 'trip-net-neg') + '">' + fmtGBP(net) + '</b>';
+
+    renderTripDetailList(items);
+  }
+
+  function renderTripDetailList(items) {
+    const wrap = el('tripDetailList');
+    const empty = el('tripDetailEmpty');
+    wrap.innerHTML = '';
+    if (!items.length) { empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    items.forEach(entry => wrap.appendChild(buildCatalogRow(entry, reopenCatalogEntry)));
+  }
+
+  el('tripDetailBack').addEventListener('click', () => switchTab('trips'));
+
+  ['tripDetailFlight', 'tripDetailHotel'].forEach(id => {
+    el(id).addEventListener('change', async () => {
+      if (!currentTripDetailLabel) return;
+      const field = id === 'tripDetailFlight' ? 'flight_cost' : 'hotel_cost';
+      const cost = parseFloat(el(id).value);
+      await saveTripCost(currentTripDetailLabel, field, isNaN(cost) ? 0 : cost);
+      renderTripDetail(currentTripDetailLabel);
+    });
+  });
+
+  el('tripAddLinkBtn').addEventListener('click', () => {
+    el('tripLinkDock').style.display = 'flex';
+    setTimeout(() => el('tripLinkInput').focus(), 50);
+  });
+
+  el('tripLinkGoBtn').addEventListener('click', () => {
+    const raw = el('tripLinkInput').value.trim();
+    if (!raw || !currentTripDetailLabel) return;
+    current.tripLabel = currentTripDetailLabel;
+    el('tripLinkInput').value = '';
+    el('tripLinkDock').style.display = 'none';
+    switchTab('prices');
+    startCheckFromUrl(raw);
+  });
+  el('tripLinkInput').addEventListener('keydown', e => { if (e.key === 'Enter') el('tripLinkGoBtn').click(); });
+
+  el('addToTripBtn').addEventListener('click', async () => {
+    if (!current.tripLabel) return;
+    if (!current.catalogId) { setStatus('Still saving — try again in a second.', true); return; }
+    const label = current.tripLabel;
+    await updateCatalogEntry(current.catalogId, { trip_label: label });
+    current.tripLabel = null;
+    el('tripAddRow').classList.remove('show');
+    catalogRows = [];
+    openTripDetail(label);
+  });
+
+  // ---- new trip modal ----
+  function openNewTripModal() {
+    el('newTripName').value = '';
+    el('newTripFlight').value = '';
+    el('newTripHotel').value = '';
+    el('newTripOverlay').classList.add('open');
+    setTimeout(() => el('newTripName').focus(), 50);
+  }
+  function closeNewTripModal() { el('newTripOverlay').classList.remove('open'); }
+
+  el('newTripBtn').addEventListener('click', openNewTripModal);
+  el('newTripCancel').addEventListener('click', closeNewTripModal);
+  el('newTripOverlay').addEventListener('click', (e) => { if (e.target === el('newTripOverlay')) closeNewTripModal(); });
+
+  el('newTripCreate').addEventListener('click', async () => {
+    const name = el('newTripName').value.trim();
+    if (!name) { el('newTripName').focus(); return; }
+    if (!db) { alert('Add your Supabase project URL and anon key in Settings first.'); return; }
+    const flight = parseFloat(el('newTripFlight').value) || 0;
+    const hotel = parseFloat(el('newTripHotel').value) || 0;
+    const { error } = await db.from('trips').upsert({ trip_label: name, flight_cost: flight, hotel_cost: hotel });
+    if (error) { alert('Couldn’t create the trip: ' + error.message); return; }
+    closeNewTripModal();
+    openTripDetail(name);
+  });
+
+  // ---- add-from-catalog picker ----
+  let catalogPickerTripLabel = null;
+
+  function openCatalogPicker(tripLabel) {
+    catalogPickerTripLabel = tripLabel;
+    el('catalogPickerSearch').value = '';
+    renderCatalogPickerList('');
+    el('catalogPickerOverlay').classList.add('open');
+  }
+  function closeCatalogPicker() {
+    el('catalogPickerOverlay').classList.remove('open');
+    catalogPickerTripLabel = null;
+  }
+
+  function renderCatalogPickerList(q) {
+    const wrap = el('catalogPickerList');
+    wrap.innerHTML = '';
+    const query = q.trim().toLowerCase();
+    const list = catalogRows.filter(e => e.trip_label !== catalogPickerTripLabel && (
+      !query ||
+      (e.product_name && e.product_name.toLowerCase().includes(query)) ||
+      (e.brand && e.brand.toLowerCase().includes(query))
+    ));
+    if (!list.length) {
+      const p = document.createElement('p');
+      p.className = 'empty-state';
+      p.style.padding = '24px 8px';
+      p.textContent = 'No matching items.';
+      wrap.appendChild(p);
+      return;
+    }
+    list.slice(0, 100).forEach(entry => {
+      wrap.appendChild(buildCatalogRow(entry, async () => {
+        await updateCatalogEntry(entry.id, { trip_label: catalogPickerTripLabel });
+        entry.trip_label = catalogPickerTripLabel;
+        const label = catalogPickerTripLabel;
+        closeCatalogPicker();
+        openTripDetail(label);
+      }));
+    });
+  }
+
+  el('tripAddCatalogBtn').addEventListener('click', () => openCatalogPicker(currentTripDetailLabel));
+  el('catalogPickerCancel').addEventListener('click', closeCatalogPicker);
+  el('catalogPickerOverlay').addEventListener('click', (e) => { if (e.target === el('catalogPickerOverlay')) closeCatalogPicker(); });
+  el('catalogPickerSearch').addEventListener('input', () => renderCatalogPickerList(el('catalogPickerSearch').value));
 
   el('statusBtn').addEventListener('click', async () => {
     const btn = el('statusBtn');
@@ -1481,9 +1790,16 @@
   const tabButtons = document.querySelectorAll('.tab-btn');
   function switchTab(name) {
     Object.keys(views).forEach(k => views[k].classList.toggle('active', k === name));
+    el('tripDetailView').classList.remove('active');
     tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     document.body.dataset.tab = name;
     filterPanel.classList.remove('open');
+    // Leaving Prices ends any in-progress "add a product to this trip" context — the Add-to-trip
+    // button on the card only makes sense while that product check is still on screen.
+    if (name !== 'prices') {
+      current.tripLabel = null;
+      el('tripAddRow').classList.remove('show');
+    }
     if (name === 'catalog') renderCatalog();
     if (name === 'trips') renderTrips();
   }
@@ -1545,7 +1861,8 @@
     const rate = current.rate;
 
     if (isNaN(frPrice) || !rate) {
-      ['costVal','saleVal','resellerVal','profitSaleVal','profitResellerVal','totalProfitVal','totalSpendVal'].forEach(id => el(id).textContent = '—');
+      ['costVal','resellerVal','profitSaleVal','profitResellerVal','totalProfitVal','totalSpendVal'].forEach(id => el(id).textContent = '—');
+      if (!saleOverridden) el('saleVal').value = '';
       el('discountVal').textContent = '—';
       el('capBadge').classList.remove('show');
       current.computed = null;
@@ -1555,21 +1872,29 @@
 
     const costEUR = frPrice * (1 - settings.refund/100);
     const costGBP = costEUR * rate;
-    let salePrice = costGBP * (1 + settings.margin/100);
+    let suggestedSalePrice = costGBP * (1 + settings.margin/100);
 
     let capApplied = false;
     if (!isNaN(ukPrice) && ukPrice > 0) {
       const cap = maxSaveFor(ukPrice);
       if (cap != null) {
         const minSalePrice = ukPrice - cap;
-        if (salePrice < minSalePrice) {
-          salePrice = minSalePrice;
+        if (suggestedSalePrice < minSalePrice) {
+          suggestedSalePrice = minSalePrice;
           capApplied = true;
         }
       }
     }
 
-    const resellerPrice = salePrice * (1 - settings.reseller/100);
+    // The sale-price field is user-editable — it doubles as "the actual final price a customer
+    // paid" when adding an item to a trip. Until the user types into it, it tracks the freshly
+    // suggested price; once they do, recalc stops overwriting it and downstream profit/discount
+    // figures follow whatever's actually in the field instead of the theoretical suggestion.
+    if (!saleOverridden) el('saleVal').value = suggestedSalePrice.toFixed(2);
+    const typedSalePrice = parseFloat(el('saleVal').value);
+    const salePrice = isNaN(typedSalePrice) ? suggestedSalePrice : typedSalePrice;
+
+    const resellerPrice = suggestedSalePrice * (1 - settings.reseller/100);
     const profitSale = salePrice - costGBP;
     const profitReseller = resellerPrice - costGBP;
     const discount = (!isNaN(ukPrice) && ukPrice > 0) ? (1 - salePrice/ukPrice) : null;
@@ -1578,7 +1903,6 @@
     const totalSpend = costGBP * qty;
 
     el('costVal').textContent = fmtGBP(costGBP);
-    el('saleVal').textContent = fmtGBP(salePrice);
     el('resellerVal').textContent = fmtGBP(resellerPrice);
     el('profitSaleVal').textContent = fmtGBP(profitSale);
     el('profitResellerVal').textContent = fmtGBP(profitReseller);
@@ -1590,6 +1914,7 @@
     current.computed = { costEUR, costGBP, salePrice, resellerPrice, profitSale, quantity: qty, totalProfit, totalSpend };
     scheduleCatalogSync();
   }
+  el('saleVal').addEventListener('input', () => { saleOverridden = true; recalc(); });
 
   function renderCard(brandLabel, productName, imageUrl, ukUrl, frUrl, ukPrice, frPrice, rate, notes) {
     el('brandName').textContent = brandLabel || 'Unrecognised brand';
@@ -1604,6 +1929,9 @@
     el('footnote').textContent = notes || 'Prices scraped live via Apify — worth a glance before you commit.';
     current.rate = rate;
     current.imageUrl = imageUrl || null;
+    saleOverridden = false;
+    el('saleVal').value = '';
+    el('tripAddRow').classList.toggle('show', !!current.tripLabel);
     card.classList.add('show');
     document.body.classList.add('result-active');
     document.body.classList.remove('dock-open');
@@ -1881,8 +2209,9 @@
     }
   }
 
-  checkBtn.addEventListener('click', () => {
-    const raw = urlInput.value.trim();
+  // Shared by the main dock's checkBtn and the trip-detail "paste a link" dock — both just feed
+  // a raw URL string in and let brand detection/scraping take it from there.
+  function startCheckFromUrl(raw) {
     if (!raw) return;
     let url;
     try { url = new URL(raw); } catch(e) { setStatus('Not a valid URL.', true); return; }
@@ -1901,7 +2230,9 @@
     }
     if (brand.scrapeBlocked) showManualMode(uk, fr, brand.name, brandKey, brandKey === 'lv' ? guessLvName(raw) : null);
     else runCheck(uk, fr, brand.name);
-  });
+  }
+
+  checkBtn.addEventListener('click', () => startCheckFromUrl(urlInput.value.trim()));
 
   urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') checkBtn.click(); });
 

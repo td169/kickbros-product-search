@@ -128,46 +128,89 @@ rate rather than restoring a stale historical one. `sku` is `getSku(url)` — ju
 last path segment — computed for every brand now, not only Dior/LV (that's still a separate,
 localStorage-only concept: the known-SKU *cache*, below).
 
-Every write to `image_url` is a no-op that fails silently (logged via `console.error` inside
-`updateCatalogEntry`, nothing surfaced in the UI) until the `image_url` column actually exists
-in the live Supabase table — check with a lightweight probe
-(`select=id,image_url&limit=1` against `/rest/v1/products`) before assuming image persistence
-works end-to-end; the anon key can't run the `alter table` itself.
+**Until the `image_url` column actually exists in the live Supabase table, every
+`updateCatalogEntry` call made through `buildCatalogPatch()` fails outright** — PostgREST
+rejects the entire PATCH (not just the unknown column) with `PGRST204`, logged via
+`console.error` but never surfaced in the UI. Since `buildCatalogPatch()` is what
+`scheduleCatalogSync()` sends after every `prodName`/`frPrice`/`ukPrice`/`quantity`/`saleVal`
+edit, this silently breaks *all* live-editing of an existing catalog row, not just its image —
+confirmed live: editing the name/prices on a freshly-created entry left the row exactly as
+the initial `addCatalogEntry` insert, even though the UI showed the edited values. Writes that
+build their own narrower patch object without `image_url` (e.g. the status-pill's
+`{ status: next }`, or tagging a trip with `{ trip_label }`) are unaffected. Check with a
+lightweight probe (`select=id,image_url&limit=1` against `/rest/v1/products`) before assuming
+catalog editing works end-to-end; the anon key can't run the `alter table` itself.
 
-### Trips tab (a strict subset of Catalog `trip_label` values, plus its own `trips` table)
+### Trips tab (Catalog `trip_label` values shown as trips, plus its own `trips` table)
 
-There's no per-check "trip label" input anymore (removed — not every check is for a trip) and
-no separate trips table joined into `products`; a trip is purely a `trip_label` value on
-existing catalog rows that happens to match `TRIP_LABEL_RE` (`/^paris\s+[a-z]+\s+\d{4}$/i`,
-e.g. `"PARIS JAN 2025"`). Older one-off labels from the Excel import that don't fit that shape
-(`"1st time"`, `"SALES MISSED PARIS MID JULY 202"`, `"Sheet1 (legacy)"`) still show up fine in
-Catalog search/filter, they just aren't treated as a trip and won't appear under the Trips tab.
-Tightening or loosening what counts as a trip is a one-line regex change in `renderTrips`, not
-a data migration.
+There's no per-check "trip label" input on the Prices card (removed — not every check is for a
+trip). A trip is any `trip_label` value that is *either* (a) present as a row in its own
+`trips` table — i.e. deliberately created via the "New trip" modal — *or* (b) a value already
+on some catalog row that matches `TRIP_LABEL_RE` (`/^paris\s+[a-z]+\s+\d{4}$/i`, e.g.
+`"PARIS JAN 2025"`), which is how the old Excel-imported trips show up despite never having a
+`trips` row of their own. Older one-off labels that don't fit either path (`"1st time"`,
+`"SALES MISSED PARIS MID JULY 202"`, `"Sheet1 (legacy)"`) still show up fine in Catalog
+search/filter, they just aren't treated as a trip. `renderTrips()` unions both sources before
+rendering the list.
 
-Revenue and profit per trip are computed client-side from `catalogRows`, summing only rows with
-`status === 'sold'` (stock hasn't sold yet, a missed sale made nothing) — `revenue` is
-`sale_price * quantity`, `profit` prefers `total_profit` and falls back to `profit * quantity`
-when it's null (older imported rows may not have `total_profit` populated).
+Revenue and profit (both in the compact Trips-tab list and on the Trip Detail page) are computed
+client-side from `catalogRows`, summing only rows with `status === 'sold'` (stock hasn't sold
+yet, a missed sale made nothing) — `revenue` is `sale_price * quantity`, `profit` prefers
+`total_profit` and falls back to `profit * quantity` when it's null (older imported rows may not
+have `total_profit` populated).
 
-Flight cost is trip-level, not per-product, so it lives in its own `trips` table
-(`trip_label` primary key, `flight_cost`) rather than as a column on `products` — see
-`loadTripCosts`/`saveTripFlightCost`. This table does not exist by default; it must be created
-manually in the Supabase SQL editor (the anon key can't run DDL):
+Flight and hotel cost are trip-level, not per-product, so they live in their own `trips` table
+(`trip_label` primary key, `flight_cost`, `hotel_cost`) rather than as columns on `products` —
+see `loadTripCosts`/`saveTripCost`. **This table does not exist by default and must be created
+manually in the Supabase SQL editor** (the anon key can't run DDL):
 
 ```sql
 create table trips (
   trip_label text primary key,
   flight_cost numeric default 0,
+  hotel_cost numeric default 0,
   updated_at timestamptz default now()
 );
 alter table trips enable row level security;
 create policy "allow all" on trips for all using (true) with check (true);
 ```
 
-Until that table exists, `loadTripCosts` fails closed (logs the error, returns `{}`) rather
-than breaking the tab — trips still render with revenue/profit, just with a blank flight-cost
-field and net profit equal to profit.
+Until that table exists: `loadTripCosts` fails closed (logs the error, returns `{}`) so
+Excel-imported trips still render with revenue/profit and just a blank cost field; "New trip"
+surfaces the failure via `alert()` and deliberately leaves its modal open so the user can retry
+once the table exists, rather than silently discarding what they typed.
+
+**Trip Detail** (`#tripDetailView`, opened via `openTripDetail(label)` from either the Trips
+list or right after creating a trip) is a separate screen from the four bottom-tab views — it's
+not in the `views` map that `switchTab` cycles through, so `switchTab` explicitly removes its
+`active` class on every tab change to make sure it doesn't linger on top of whichever tab was
+actually selected. From here you can add products two ways:
+- **"+ Paste a link"** reveals an inline URL input reusing `startCheckFromUrl()` — the same
+  brand-detection/scrape logic as the main dock's checkBtn (factored out into that shared
+  function for exactly this reuse). Before calling it, `current.tripLabel` is set to the open
+  trip's label and the app switches to the Prices tab to show the resulting card — the card
+  itself doesn't change layout, it just gains a visible "Add to trip →" button
+  (`#tripAddRow`/`#addToTripBtn`, toggled in `renderCard()` off `!!current.tripLabel`) that,
+  when clicked, tags the just-created catalog row with `{ trip_label }` and returns to Trip
+  Detail. `current.tripLabel` is cleared (a) on that click, (b) by `switchTab()` whenever the
+  target isn't `'prices'`, and (c) at the top of `reopenCatalogEntry()` — opening an
+  *existing* item from anywhere should never be mistaken for "currently adding to a trip".
+- **"+ From catalog"** opens a picker (`#catalogPickerOverlay`) listing existing catalog rows
+  not already tagged with this trip; tapping one just calls
+  `updateCatalogEntry(id, { trip_label })` directly, no card involved.
+
+The product card's "Your sale price" field (`#saleVal`) is a plain editable `<input>`, not a
+computed-only span — this is deliberate, since a trip is where the *actual* final sale price
+gets recorded, not just the calculator's suggestion. `recalc()` keeps writing the freshly
+suggested price into it on every input change **until the user types into it themselves**
+(tracked by the module-level `saleOverridden` flag, reset to `false` on every fresh
+`renderCard()` call); once overridden, `profitSale`/`totalProfit`/the "vs UK RRP" discount all
+switch to using that typed figure instead of the theoretical one, but `resellerPrice` stays
+based on the un-overridden suggestion (reseller/B2B pricing is a separate business rule,
+unrelated to what one customer happened to pay). Reopening an existing entry via
+`reopenCatalogEntry()` treats its stored `sale_price` the same way — pre-fills it and marks it
+overridden — so revisiting an item to fix its FR/UK RRP never silently nudges an
+already-recorded sale price.
 
 ### Known-SKU cache (`localStorage`, separate from the Catalog)
 
