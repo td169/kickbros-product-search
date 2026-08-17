@@ -175,7 +175,6 @@
      speaks for itself at that point. */
   body.result-active #pricesView > h1,
   body.result-active #pricesView > .sub,
-  body.result-active #pricesView > .disclaimer,
   body.result-active #pricesView > .list-row,
   body.result-active #pricesView > .manual-panel{display:none;}
 
@@ -430,11 +429,6 @@
     flex:none;
   }
   .card-footnote button:hover{color:var(--ink);}
-
-  .disclaimer{
-    font-size:11.5px;color:var(--muted-2);line-height:1.6;
-    margin:0 0 12px;
-  }
 
   /* catalog view */
   .view-header{display:flex;align-items:center;justify-content:space-between;margin:10px 0 12px;}
@@ -699,7 +693,7 @@
 
   <main class="view active" id="pricesView">
     <button type="button" class="text-link card-back-btn" id="cardBackBtn">← Back</button>
-    <h1>Paste a link, get the numbers.</h1>
+    <h1>KICKBROS HUB</h1>
     <p class="sub">Drop in a designer product page and we'll work out what to charge after the détaxe refund.</p>
 
     <button class="list-row" id="manualToggle">
@@ -796,8 +790,6 @@
         <button type="button" class="btn-add-trip" id="addToTripBtn">Add to trip →</button>
       </div>
     </div>
-
-    <p class="disclaimer">Prices are pulled live via Apify using your own token (Settings) — a scrape can still miss, so the FR/UK figures are always editable. Dior and Louis Vuitton block automated scraping, so those go straight to manual entry.</p>
   </main>
 
   <main class="view" id="catalogView">
