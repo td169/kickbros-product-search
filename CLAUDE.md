@@ -71,6 +71,19 @@ blocked by the same bot protection as the page itself. `serperImageSearch` uses 
 endpoint's `thumbnailUrl` (hosted on `gstatic.com`) instead of `imageUrl`, since that's the one
 that actually loads.
 
+Because calls are sequential and each takes a moment, the user can easily open a new product
+before a previous one's image search resolves. `trySerperFill`/`tryImageFallback` used to guard
+every step with `if (current.catalogId !== id) return;`, which bailed out of the whole
+in-flight chain the instant that happened — silently dropping the image for the product it
+belonged to. The fix: the image portion of both functions now always calls
+`updateCatalogEntry(id, { image_url: img })` regardless of what's on screen, and only
+conditionally touches the live `<img>`/`current.imageUrl` when `current.catalogId === id`.
+Persistence and on-screen rendering are deliberately decoupled for this reason — don't
+reintroduce a single guard that does both. (`applyName`/`applyPrice` inside `trySerperFill`
+stay screen-only-guarded on purpose: unlike the image, they read/write live DOM fields, so
+applying them to a stale id would mean writing into fields that belong to whatever's on screen
+now, which would corrupt the wrong product's name/price instead.)
+
 ### Price parsing
 
 `parseMoney` must handle UK format (`1,090.00`, comma thousands / dot decimal) and FR format
@@ -107,12 +120,54 @@ The client variable is named `db`, not `supabase` — the CDN script's global is
 `window.supabase`, so naming the instance the same would shadow it and break
 re-initialization when the user edits the Settings fields.
 
-Schema has no `image_url`, `manual_mode`, or `rate` column: images are UI-only (never
-persisted), manual-mode styling on reopen is inferred by looking up the stored `brand` name
+Schema has an `image_url` column (added later — persists whatever image Apify's `og:image` or
+a Serper Images fallback found, so it survives reopening the entry) but no `manual_mode` or
+`rate` column: manual-mode styling on reopen is inferred by looking up the stored `brand` name
 against `BRANDS[...].scrapeBlocked`, and reopening an old entry fetches a *fresh* exchange
 rate rather than restoring a stale historical one. `sku` is `getSku(url)` — just the URL's
 last path segment — computed for every brand now, not only Dior/LV (that's still a separate,
 localStorage-only concept: the known-SKU *cache*, below).
+
+Every write to `image_url` is a no-op that fails silently (logged via `console.error` inside
+`updateCatalogEntry`, nothing surfaced in the UI) until the `image_url` column actually exists
+in the live Supabase table — check with a lightweight probe
+(`select=id,image_url&limit=1` against `/rest/v1/products`) before assuming image persistence
+works end-to-end; the anon key can't run the `alter table` itself.
+
+### Trips tab (a strict subset of Catalog `trip_label` values, plus its own `trips` table)
+
+There's no per-check "trip label" input anymore (removed — not every check is for a trip) and
+no separate trips table joined into `products`; a trip is purely a `trip_label` value on
+existing catalog rows that happens to match `TRIP_LABEL_RE` (`/^paris\s+[a-z]+\s+\d{4}$/i`,
+e.g. `"PARIS JAN 2025"`). Older one-off labels from the Excel import that don't fit that shape
+(`"1st time"`, `"SALES MISSED PARIS MID JULY 202"`, `"Sheet1 (legacy)"`) still show up fine in
+Catalog search/filter, they just aren't treated as a trip and won't appear under the Trips tab.
+Tightening or loosening what counts as a trip is a one-line regex change in `renderTrips`, not
+a data migration.
+
+Revenue and profit per trip are computed client-side from `catalogRows`, summing only rows with
+`status === 'sold'` (stock hasn't sold yet, a missed sale made nothing) — `revenue` is
+`sale_price * quantity`, `profit` prefers `total_profit` and falls back to `profit * quantity`
+when it's null (older imported rows may not have `total_profit` populated).
+
+Flight cost is trip-level, not per-product, so it lives in its own `trips` table
+(`trip_label` primary key, `flight_cost`) rather than as a column on `products` — see
+`loadTripCosts`/`saveTripFlightCost`. This table does not exist by default; it must be created
+manually in the Supabase SQL editor (the anon key can't run DDL):
+
+```sql
+create table trips (
+  trip_label text primary key,
+  flight_cost numeric default 0,
+  updated_at timestamptz default now()
+);
+alter table trips enable row level security;
+create policy "allow all" on trips for all using (true) with check (true);
+```
+
+Until that table exists, `loadTripCosts` fails closed (logs the error, returns `{}`) rather
+than breaking the tab — trips still render with revenue/profit, just with a blank flight-cost
+field and net profit equal to profit.
 
 ### Known-SKU cache (`localStorage`, separate from the Catalog)
 

@@ -507,6 +507,18 @@
   body.dock-open.result-active .status-row{display:none;}
   .empty-state{color:var(--muted);font-size:13.5px;text-align:center;padding:70px 24px;line-height:1.6;}
 
+  .trip-item{flex-direction:column;align-items:stretch;gap:8px;}
+  .trip-stats{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12.5px;color:var(--muted);padding:0 2px;}
+  .trip-stats b{color:var(--ink);font-weight:600;}
+  .trip-stats .trip-net-pos{color:var(--profit);font-weight:600;}
+  .trip-stats .trip-net-neg{color:var(--danger);font-weight:600;}
+  .trip-flight-row{display:flex;align-items:center;gap:8px;padding:0 2px;}
+  .trip-flight-row label{font-size:11.5px;color:var(--muted-2);flex:none;}
+  .trip-flight-row input{
+    font:inherit;font-size:13px;width:90px;padding:5px 8px;border-radius:8px;
+    border:1px solid var(--line);background:var(--field-bg);color:var(--ink);
+  }
+
   /* bottom tab bar */
   .tabbar{
     position:fixed;left:0;right:0;bottom:0;
@@ -664,7 +676,7 @@
   <main class="view" id="tripsView">
     <div class="view-header"><h1>Trips</h1></div>
     <div class="catalog-list" id="tripsList"></div>
-    <p class="empty-state" id="tripsEmpty">No trips tagged yet — items only show up here if they came in with a trip label attached (like the old Excel import).</p>
+    <p class="empty-state" id="tripsEmpty">No trips yet — only items tagged with a "PARIS &lt;month&gt; &lt;year&gt;" trip label (like the old Excel import) show up here.</p>
   </main>
 
   <main class="view" id="settingsView">
@@ -1072,6 +1084,22 @@
     if (error) console.error('updateCatalogEntry', error);
   }
 
+  // Flight cost is a per-trip figure, not a per-product one, so it lives in its own small
+  // `trips` table (trip_label -> flight_cost) rather than on every product row.
+  async function loadTripCosts() {
+    if (!db) return {};
+    const { data, error } = await db.from('trips').select('trip_label, flight_cost');
+    if (error) { console.error('loadTripCosts', error); return {}; }
+    const map = {};
+    (data || []).forEach(t => { map[t.trip_label] = t.flight_cost; });
+    return map;
+  }
+  async function saveTripFlightCost(tripLabel, cost) {
+    if (!db) return;
+    const { error } = await db.from('trips').upsert({ trip_label: tripLabel, flight_cost: cost });
+    if (error) console.error('saveTripFlightCost', tripLabel, error);
+  }
+
   function renderStatusPill(btn, status) {
     btn.dataset.status = status;
     btn.textContent = STATUS_LABEL[status] || STATUS_LABEL.stock;
@@ -1275,9 +1303,13 @@
     brands.forEach(b => wrap.appendChild(makeItem(b, counts[b], catalogBrandFilter === b)));
   }
 
-  // Trips are just whatever distinct trip_label values already exist in the catalog — not
-  // every check gets one (no more auto-tagging setting), so this only ever shows items that
-  // came in with a label already attached, like the old Excel import.
+  // A "trip" is specifically a Paris buying trip — trip_label values of the shape
+  // "PARIS <MONTH> <YEAR>" (e.g. "PARIS JAN 2025", "PARIS JUNE 2025"). Anything else that
+  // happens to have a trip_label (old one-off labels like "SALES MISSED PARIS MID JULY 202",
+  // "1st time", "Sheet1 (legacy)" from the Excel import) still shows up in the Catalog, it just
+  // isn't a trip and is excluded here.
+  const TRIP_LABEL_RE = /^paris\s+[a-z]+\s+\d{4}$/i;
+
   async function renderTrips() {
     const wrap = el('tripsList');
     const empty = el('tripsEmpty');
@@ -1291,11 +1323,19 @@
 
     const trips = {};
     catalogRows.forEach(e => {
-      if (!e.trip_label) return;
-      if (!trips[e.trip_label]) trips[e.trip_label] = { count: 0, lastTs: 0 };
-      trips[e.trip_label].count++;
+      if (!e.trip_label || !TRIP_LABEL_RE.test(e.trip_label.trim())) return;
+      if (!trips[e.trip_label]) trips[e.trip_label] = { count: 0, lastTs: 0, revenue: 0, profit: 0 };
+      const t = trips[e.trip_label];
+      t.count++;
       const ts = e.created_at ? new Date(e.created_at).getTime() : 0;
-      if (ts > trips[e.trip_label].lastTs) trips[e.trip_label].lastTs = ts;
+      if (ts > t.lastTs) t.lastTs = ts;
+      // Revenue/profit only count items that actually sold — stock hasn't made money yet and
+      // a missed sale made none.
+      if (e.status === 'sold') {
+        const qty = e.quantity || 1;
+        if (e.sale_price != null) t.revenue += e.sale_price * qty;
+        t.profit += e.total_profit != null ? e.total_profit : (e.profit != null ? e.profit * qty : 0);
+      }
     });
     const names = Object.keys(trips).sort((a, b) => trips[b].lastTs - trips[a].lastTs);
 
@@ -1304,6 +1344,9 @@
       return;
     }
     empty.style.display = 'none';
+
+    const flightCosts = await loadTripCosts();
+
     names.forEach(name => {
       const openBtn = document.createElement('button');
       openBtn.type = 'button';
@@ -1334,9 +1377,48 @@
         applyCatalogFilters();
       });
 
+      const stats = document.createElement('div');
+      stats.className = 'trip-stats';
+      const revenueSpan = document.createElement('span');
+      revenueSpan.innerHTML = 'Revenue <b>' + fmtGBP(trips[name].revenue) + '</b>';
+      const profitSpan = document.createElement('span');
+      profitSpan.innerHTML = 'Profit <b>' + fmtGBP(trips[name].profit) + '</b>';
+      const netSpan = document.createElement('span');
+      stats.appendChild(revenueSpan);
+      stats.appendChild(profitSpan);
+      stats.appendChild(netSpan);
+
+      const flightRow = document.createElement('div');
+      flightRow.className = 'trip-flight-row';
+      const label = document.createElement('label');
+      label.textContent = 'Flight cost £';
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.step = '0.01';
+      input.min = '0';
+      input.value = flightCosts[name] != null ? flightCosts[name] : '';
+      input.placeholder = '0.00';
+      flightRow.appendChild(label);
+      flightRow.appendChild(input);
+
+      function renderNet() {
+        const flightCost = parseFloat(input.value) || 0;
+        const net = trips[name].profit - flightCost;
+        netSpan.innerHTML = 'Net profit <b class="' + (net >= 0 ? 'trip-net-pos' : 'trip-net-neg') + '">' + fmtGBP(net) + '</b>';
+      }
+      renderNet();
+      input.addEventListener('change', () => {
+        const cost = parseFloat(input.value);
+        flightCosts[name] = isNaN(cost) ? 0 : cost;
+        saveTripFlightCost(name, isNaN(cost) ? 0 : cost);
+        renderNet();
+      });
+
       const row = document.createElement('div');
-      row.className = 'catalog-item';
+      row.className = 'catalog-item trip-item';
       row.appendChild(openBtn);
+      row.appendChild(stats);
+      row.appendChild(flightRow);
       wrap.appendChild(row);
     });
   }
@@ -1622,49 +1704,56 @@
   async function trySerperFill(id, ukUrl, frUrl, brandLabel) {
     const token = serperTokenInput.value.trim();
     if (!token) return;
-    let nameApplied = false, imageApplied = null, anyApplied = false;
+    let nameApplied = false, anyApplied = false;
 
+    // These only ever touch the DOM, so they must stay guarded by current.catalogId — if the
+    // user has moved on to a different product, its name/price fields belong to that product,
+    // not this stale lookup.
     function applyName(title) {
-      if (!title || nameApplied || current.nameSource === 'user') return;
+      if (!title || nameApplied || current.catalogId !== id || current.nameSource === 'user') return;
       el('prodName').value = cleanTitle(title, brandLabel);
       current.nameSource = 'serper';
       nameApplied = true; anyApplied = true;
     }
     function applyPrice(fieldId, value) {
-      if (value == null || el(fieldId).value) return;
+      if (value == null || current.catalogId !== id || el(fieldId).value) return;
       el(fieldId).value = value;
       anyApplied = true;
     }
 
     try {
-      const ukInfo = await serperLookup(ukUrl, token).catch(() => null);
-      if (current.catalogId !== id) return;
+      const ukInfo = await serperLookup(ukUrl, token).catch(err => { console.error('serperLookup (UK)', id, err); return null; });
       applyName(ukInfo && ukInfo.title);
       applyPrice('ukPrice', ukInfo ? parseMoney(ukInfo.gbpPrice) : null);
-      recalc();
+      if (current.catalogId === id) recalc();
 
-      const frInfo = await serperLookup(frUrl, token).catch(() => null);
-      if (current.catalogId !== id) return;
+      const frInfo = await serperLookup(frUrl, token).catch(err => { console.error('serperLookup (FR)', id, err); return null; });
       applyName(frInfo && frInfo.title);
       applyPrice('frPrice', frInfo ? parseMoney(frInfo.eurPrice) : null);
-      recalc();
+      if (current.catalogId === id) recalc();
 
-      let img = await serperImageSearch(ukUrl, token).catch(() => null);
-      if (current.catalogId !== id) return;
-      if (!img) img = await serperImageSearch(frUrl, token).catch(() => null);
-      if (current.catalogId !== id) return;
+      // Unlike name/price above, the image is never derived from what's currently in the DOM,
+      // so it doesn't need to stay on-screen to be valid — persist it to row `id` regardless of
+      // what the user has since navigated to (see tryImageFallback for the same pattern).
+      let img = await serperImageSearch(ukUrl, token).catch(err => { console.error('serperImageSearch (UK)', id, err); return null; });
+      if (!img) img = await serperImageSearch(frUrl, token).catch(err => { console.error('serperImageSearch (FR)', id, err); return null; });
       if (img) {
-        el('prodImg').src = img;
-        el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
-        current.imageUrl = img;
-        imageApplied = img; anyApplied = true;
+        updateCatalogEntry(id, { image_url: img });
+        if (current.catalogId === id) {
+          current.imageUrl = img;
+          el('prodImg').src = img;
+          el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
+          anyApplied = true;
+        }
+      } else {
+        console.warn('trySerperFill: no image found for', id);
       }
 
-      if (anyApplied) {
+      if (current.catalogId === id && anyApplied) {
         el('footnote').textContent = 'Name/image/price suggested from Google’s indexed page (via Serper) — not a live scrape, so double-check before you commit.';
         updateCatalogEntry(id, buildCatalogPatch());
       }
-    } catch (e) { /* best-effort only — manual entry remains the fallback */ }
+    } catch (e) { console.error('trySerperFill failed for', id, e); }
   }
 
   // For scraped brands where the page's own og:image was missing — same Google Images
@@ -1674,16 +1763,24 @@
     const token = serperTokenInput.value.trim();
     if (!token) return;
     try {
-      let img = await serperImageSearch(ukUrl, token).catch(() => null);
-      if (current.catalogId !== id) return;
-      if (!img) img = await serperImageSearch(frUrl, token).catch(() => null);
-      if (current.catalogId !== id) return;
-      if (!img) return;
-      el('prodImg').src = img;
-      el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
-      current.imageUrl = img;
+      let img = await serperImageSearch(ukUrl, token).catch(err => { console.error('serperImageSearch (UK)', id, err); return null; });
+      if (!img) img = await serperImageSearch(frUrl, token).catch(err => { console.error('serperImageSearch (FR)', id, err); return null; });
+      if (!img) {
+        console.warn('tryImageFallback: no image found for', id);
+        if (current.catalogId === id) el('footnote').textContent = 'Couldn’t find an image for this listing via Google — try again later or add one manually.';
+        return;
+      }
+
+      // Persist to the row this image actually belongs to, regardless of what's on screen now.
       updateCatalogEntry(id, { image_url: img });
-    } catch (e) { /* best-effort only */ }
+
+      // Only touch the live card if the user hasn't navigated away to a different product.
+      if (current.catalogId === id) {
+        current.imageUrl = img;
+        el('prodImg').src = img;
+        el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
+      }
+    } catch (e) { console.error('tryImageFallback failed for', id, e); }
   }
 
   // Some brands' sites block automated scraping outright (bot protection) — for those,
