@@ -443,6 +443,10 @@
     background:none;border:none;font-family:inherit;font-size:13px;font-weight:600;
     color:var(--muted);cursor:pointer;text-decoration:underline;
   }
+  /* Shown only when the product card was opened from an existing list (Catalog/Trip Detail),
+     not for a fresh check — those have nowhere meaningful to "go back" to. */
+  .card-back-btn{display:none;margin:2px 0 10px;}
+  .card-back-btn.show{display:inline-block;}
   .catalog-search{
     width:100%;height:44px;border:none;border-radius:var(--radius-pill);
     background:var(--surface);padding:0 16px;margin-bottom:10px;
@@ -694,6 +698,7 @@
   </div>
 
   <main class="view active" id="pricesView">
+    <button type="button" class="text-link card-back-btn" id="cardBackBtn">← Back</button>
     <h1>Paste a link, get the numbers.</h1>
     <p class="sub">Drop in a designer product page and we'll work out what to charge after the détaxe refund.</p>
 
@@ -861,7 +866,10 @@
 
   <div class="modal-overlay" id="newTripOverlay">
     <div class="modal">
-      <h3>New trip</h3>
+      <div class="modal-header">
+        <h3>New trip</h3>
+        <button type="button" class="modal-close" id="newTripClose" aria-label="Close">×</button>
+      </div>
       <div class="field">
         <label>Trip name</label>
         <input type="text" id="newTripName" placeholder="PARIS AUGUST 2026" autocomplete="off">
@@ -1066,6 +1074,12 @@
   // screen — once true, recalc() stops overwriting it with the freshly suggested price, since
   // this field doubles as "the actual final price a customer paid" when adding to a trip.
   let saleOverridden = false;
+  // Where the card's "← Back" button should return to — null for a fresh check (nothing to go
+  // back to; "New product" already covers that), 'catalog' or 'tripDetail' when the card was
+  // opened by tapping an existing item from one of those lists. cardReturnTripLabel only
+  // matters for 'tripDetail', so the button knows which trip to reopen.
+  let cardReturnTo = null;
+  let cardReturnTripLabel = null;
 
   const TOKEN_KEY = 'kickbros_apify_token';
   const apifyTokenInput = el('setApifyToken');
@@ -1492,13 +1506,18 @@
       return;
     }
     empty.style.display = 'none';
-    list.forEach(entry => wrap.appendChild(buildCatalogRow(entry, reopenCatalogEntry)));
+    list.forEach(entry => wrap.appendChild(buildCatalogRow(entry, e => reopenCatalogEntry(e, 'catalog'))));
   }
 
-  async function reopenCatalogEntry(entry) {
+  async function reopenCatalogEntry(entry, returnTo, returnTripLabel) {
     switchTab('prices');
     resetCardMode();
     current.catalogId = null;
+    // Where the "← Back" button on the card should go once shown — set here rather than
+    // inferred, since switchTab('prices') above would otherwise be indistinguishable from a
+    // fresh check started from the main dock (which has nowhere meaningful to "go back" to).
+    cardReturnTo = returnTo || null;
+    cardReturnTripLabel = returnTripLabel || null;
     // Reopening an existing item is never "adding to a trip" — that context only applies to a
     // check just started from the trip-detail "paste a link" flow.
     current.tripLabel = null;
@@ -1820,7 +1839,8 @@
     wrap.innerHTML = '';
     if (!items.length) { empty.style.display = 'block'; return; }
     empty.style.display = 'none';
-    items.forEach(entry => wrap.appendChild(buildCatalogRow(entry, reopenCatalogEntry)));
+    const label = currentTripDetailLabel;
+    items.forEach(entry => wrap.appendChild(buildCatalogRow(entry, e => reopenCatalogEntry(e, 'tripDetail', label))));
   }
 
   el('tripDetailBack').addEventListener('click', () => switchTab('trips'));
@@ -1854,6 +1874,9 @@
     const raw = el('tripLinkInput').value.trim();
     if (!raw || !currentTripDetailLabel) return;
     current.tripLabel = currentTripDetailLabel;
+    // Changed your mind mid-check? "← Back" should return to this trip, same as "Add to trip".
+    cardReturnTo = 'tripDetail';
+    cardReturnTripLabel = currentTripDetailLabel;
     el('tripLinkInput').value = '';
     el('tripLinkDock').style.display = 'none';
     switchTab('prices');
@@ -1886,6 +1909,7 @@
 
   el('newTripBtn').addEventListener('click', openNewTripModal);
   el('newTripCancel').addEventListener('click', closeNewTripModal);
+  el('newTripClose').addEventListener('click', closeNewTripModal);
   el('newTripOverlay').addEventListener('click', (e) => { if (e.target === el('newTripOverlay')) closeNewTripModal(); });
 
   el('newTripCreate').addEventListener('click', async () => {
@@ -2152,6 +2176,7 @@
     saleOverridden = false;
     el('saleVal').value = '';
     el('tripAddRow').classList.toggle('show', !!current.tripLabel);
+    el('cardBackBtn').classList.toggle('show', !!cardReturnTo);
     card.classList.add('show');
     document.body.classList.add('result-active');
     document.body.classList.remove('dock-open');
@@ -2168,9 +2193,19 @@
     urlInput.value = '';
     setStatus('');
     switchTab('prices');
+    // Clear any "← Back" context from a previously reopened item — a fresh check has nowhere
+    // meaningful to go back to.
+    cardReturnTo = null;
+    cardReturnTripLabel = null;
+    el('cardBackBtn').classList.remove('show');
     setTimeout(() => urlInput.focus(), 100);
   }
   el('newCheckBtn').addEventListener('click', startNewCheck);
+
+  el('cardBackBtn').addEventListener('click', () => {
+    if (cardReturnTo === 'tripDetail' && cardReturnTripLabel) openTripDetail(cardReturnTripLabel);
+    else if (cardReturnTo === 'catalog') switchTab('catalog');
+  });
 
   function resetCardMode() {
     card.classList.remove('manual-mode');
