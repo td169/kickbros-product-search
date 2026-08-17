@@ -182,7 +182,7 @@
   /* search dock — pinned above the tab bar, Uber "Where to?"-style, so it's reachable with
      a thumb without scrolling. Visibility is its own state (dock-open), independent of
      whether a result card is showing — "New product" reopens the dock without touching
-     the card underneath. Always hidden on the History tab (nothing to search there). */
+     the card underneath. Only ever relevant on the Prices tab. */
   .search-dock{
     display:none;
     position:fixed;left:0;right:0;
@@ -191,7 +191,7 @@
     padding:10px 20px 12px;
     background:linear-gradient(to top, var(--bg) 65%, transparent);
   }
-  body.dock-open:not(.tab-catalog) .search-dock{display:block;}
+  body.dock-open[data-tab="prices"] .search-dock{display:block;}
   .search-dock-inner{max-width:420px;margin:0 auto;}
   .search-row{display:flex;gap:10px;align-items:center;}
   .search-row input{
@@ -661,6 +661,12 @@
     <p class="empty-state" id="catalogEmpty">Nothing in the catalog yet — checks you run in Prices will show up here.</p>
   </main>
 
+  <main class="view" id="tripsView">
+    <div class="view-header"><h1>Trips</h1></div>
+    <div class="catalog-list" id="tripsList"></div>
+    <p class="empty-state" id="tripsEmpty">No trips tagged yet — items only show up here if they came in with a trip label attached (like the old Excel import).</p>
+  </main>
+
   <main class="view" id="settingsView">
     <div class="view-header"><h1>Settings</h1></div>
     <div class="settings-view">
@@ -672,10 +678,6 @@
       <div class="field">
         <label>Supabase anon key <span class="hint">required for catalog</span></label>
         <input type="password" id="setSupabaseKey" placeholder="eyJ…" autocomplete="off">
-      </div>
-      <div class="field">
-        <label>Trip label <span class="hint">tags new catalog entries</span></label>
-        <input type="text" id="setTripLabel" placeholder="e.g. Paris Aug 2026" autocomplete="off">
       </div>
 
       <h3>Lookup APIs</h3>
@@ -728,6 +730,10 @@
   <button class="tab-btn" id="tabCatalog" data-tab="catalog">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
     <span>Catalog</span>
+  </button>
+  <button class="tab-btn" id="tabTrips" data-tab="trips">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+    <span>Trips</span>
   </button>
   <button class="tab-btn" id="tabSettings" data-tab="settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -848,14 +854,6 @@
       else localStorage.removeItem(key);
       initSupabaseClient();
     });
-  });
-
-  const TRIP_LABEL_KEY = 'kickbros_trip_label';
-  const tripLabelInput = el('setTripLabel');
-  function defaultTripLabel() { return new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }); }
-  tripLabelInput.value = localStorage.getItem(TRIP_LABEL_KEY) || defaultTripLabel();
-  tripLabelInput.addEventListener('input', () => {
-    localStorage.setItem(TRIP_LABEL_KEY, tripLabelInput.value.trim());
   });
 
   el('forgetToken').addEventListener('click', () => {
@@ -1277,6 +1275,72 @@
     brands.forEach(b => wrap.appendChild(makeItem(b, counts[b], catalogBrandFilter === b)));
   }
 
+  // Trips are just whatever distinct trip_label values already exist in the catalog — not
+  // every check gets one (no more auto-tagging setting), so this only ever shows items that
+  // came in with a label already attached, like the old Excel import.
+  async function renderTrips() {
+    const wrap = el('tripsList');
+    const empty = el('tripsEmpty');
+    wrap.innerHTML = '';
+    if (!db) {
+      empty.textContent = 'Add your Supabase project URL and anon key in Settings to turn on the shared catalog.';
+      empty.style.display = 'block';
+      return;
+    }
+    if (!catalogRows.length) catalogRows = await loadCatalog();
+
+    const trips = {};
+    catalogRows.forEach(e => {
+      if (!e.trip_label) return;
+      if (!trips[e.trip_label]) trips[e.trip_label] = { count: 0, lastTs: 0 };
+      trips[e.trip_label].count++;
+      const ts = e.created_at ? new Date(e.created_at).getTime() : 0;
+      if (ts > trips[e.trip_label].lastTs) trips[e.trip_label].lastTs = ts;
+    });
+    const names = Object.keys(trips).sort((a, b) => trips[b].lastTs - trips[a].lastTs);
+
+    if (!names.length) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    names.forEach(name => {
+      const openBtn = document.createElement('button');
+      openBtn.type = 'button';
+      openBtn.className = 'catalog-open';
+      openBtn.style.padding = '10px 2px';
+      openBtn.style.width = '100%';
+
+      const text = document.createElement('span');
+      text.className = 'catalog-text';
+      const title = document.createElement('span');
+      title.className = 'catalog-title';
+      title.textContent = name;
+      const sub = document.createElement('span');
+      sub.className = 'catalog-sub';
+      sub.textContent = trips[name].count + (trips[name].count === 1 ? ' item' : ' items');
+      text.appendChild(title);
+      text.appendChild(sub);
+
+      const chevWrap = document.createElement('span');
+      chevWrap.innerHTML = CHEV_SVG;
+
+      openBtn.appendChild(text);
+      openBtn.appendChild(chevWrap.firstChild);
+      openBtn.addEventListener('click', () => {
+        el('catalogSearch').value = name;
+        catalogBrandFilter = null;
+        switchTab('catalog');
+        applyCatalogFilters();
+      });
+
+      const row = document.createElement('div');
+      row.className = 'catalog-item';
+      row.appendChild(openBtn);
+      wrap.appendChild(row);
+    });
+  }
+
   el('statusBtn').addEventListener('click', async () => {
     const btn = el('statusBtn');
     const next = cycleStatus(btn.dataset.status || 'stock');
@@ -1331,14 +1395,15 @@
   }
 
   // ---- tabs ----
-  const views = { prices: el('pricesView'), catalog: el('catalogView'), settings: el('settingsView') };
+  const views = { prices: el('pricesView'), catalog: el('catalogView'), trips: el('tripsView'), settings: el('settingsView') };
   const tabButtons = document.querySelectorAll('.tab-btn');
   function switchTab(name) {
     Object.keys(views).forEach(k => views[k].classList.toggle('active', k === name));
     tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-    document.body.classList.toggle('tab-catalog', name === 'catalog');
+    document.body.dataset.tab = name;
     filterPanel.classList.remove('open');
     if (name === 'catalog') renderCatalog();
+    if (name === 'trips') renderTrips();
   }
   tabButtons.forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
@@ -1656,7 +1721,7 @@
 
     const row = await addCatalogEntry({
       brand: brandLabel, product_name: initialName, sku: current.sku,
-      url_uk: ukUrl, url_fr: frUrl, trip_label: tripLabelInput.value.trim() || null,
+      url_uk: ukUrl, url_fr: frUrl,
       eu_retail: initialFrPrice, uk_retail: initialUkPrice
     });
     if (!row) { setStatus('Couldn’t save to the catalog — check your Supabase settings.', true); return; }
@@ -1702,7 +1767,7 @@
       renderStatusPill(el('statusBtn'), 'stock');
       const row = await addCatalogEntry({
         brand: brandLabel, product_name: info.productName, sku: getSku(ukUrl) || getSku(frUrl),
-        url_uk: ukUrl, url_fr: frUrl, trip_label: tripLabelInput.value.trim() || null,
+        url_uk: ukUrl, url_fr: frUrl,
         image_url: info.imageUrl, eu_retail: info.frPrice, uk_retail: info.ukPrice
       });
       if (row) {
