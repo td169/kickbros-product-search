@@ -1327,7 +1327,12 @@
 
   async function loadCatalog() {
     if (!db) return [];
-    const { data, error } = await db.from('products').select('*').order('created_at', { ascending: false }).limit(300);
+    // Secondary sort on id: many rows (bulk Excel imports especially) share an identical
+    // created_at down to the microsecond, and Postgres doesn't guarantee a stable order for
+    // ties — without a tiebreaker, those rows' relative order could shuffle on every fetch,
+    // making catalog items visibly "move" each time you reopen the tab.
+    const { data, error } = await db.from('products').select('*')
+      .order('created_at', { ascending: false }).order('id', { ascending: true }).limit(300);
     if (error) { console.error('loadCatalog', error); return []; }
     return data || [];
   }
@@ -1364,23 +1369,27 @@
   // there yet (it still shows in the "previous trips" dock).
   async function loadTripMeta() {
     if (!db) return {};
-    const { data, error } = await db.from('trips').select('trip_label, flight_cost, hotel_cost, start_date, end_date');
+    const { data, error } = await db.from('trips').select('trip_label, flight_cost, hotel_cost, start_date, end_date, updated_at');
     if (error) { console.error('loadTripMeta', error); return {}; }
     const map = {};
     (data || []).forEach(t => {
       map[t.trip_label] = {
         flight_cost: t.flight_cost || 0, hotel_cost: t.hotel_cost || 0,
-        start_date: t.start_date || null, end_date: t.end_date || null
+        start_date: t.start_date || null, end_date: t.end_date || null,
+        updated_at: t.updated_at || null
       };
     });
     return map;
   }
   // Upserts a single field — PostgREST's upsert only touches the columns given, so setting just
   // flight_cost on an existing row leaves hotel_cost/start_date/end_date (and vice versa)
-  // untouched.
+  // untouched. Always bumps updated_at explicitly — Postgres' column default only fires on
+  // INSERT, not UPDATE, and the "previous trips" dock sorts by this to show whichever trip was
+  // actually touched most recently (not, say, whichever has the latest end_date — mixing those
+  // two signals is exactly what made an edited trip jump to an unexpected spot before).
   async function saveTripField(tripLabel, field, value) {
     if (!db) return;
-    const { error } = await db.from('trips').upsert({ trip_label: tripLabel, [field]: value });
+    const { error } = await db.from('trips').upsert({ trip_label: tripLabel, [field]: value, updated_at: new Date().toISOString() });
     if (error) console.error('saveTripField', tripLabel, field, error);
   }
 
@@ -1623,7 +1632,8 @@
     const trips = Array.from(labels).map(label => ({
       label,
       start: (meta[label] && meta[label].start_date) || null,
-      end: (meta[label] && meta[label].end_date) || null
+      end: (meta[label] && meta[label].end_date) || null,
+      updatedAt: (meta[label] && meta[label].updated_at) || null
     }));
 
     renderCalendarGrid(trips);
@@ -1729,10 +1739,15 @@
       if (!lastActivity[e.trip_label] || ts > lastActivity[e.trip_label]) lastActivity[e.trip_label] = ts;
     });
 
+    // Sort purely by recency of activity — whichever trip was actually touched most recently
+    // (a product added to it, or its own cost/dates edited) — never by the trip's own
+    // start/end date. Mixing "when was this touched" with "when does this trip happen" was
+    // exactly what made an edited trip jump to a confusing spot: a trip you just edited today
+    // could still have an earlier end_date than an untouched trip, and used to rank below it.
     const sorted = trips.slice().sort((a, b) => {
-      const aKey = a.end || (lastActivity[a.label] ? new Date(lastActivity[a.label]).toISOString().slice(0, 10) : '');
-      const bKey = b.end || (lastActivity[b.label] ? new Date(lastActivity[b.label]).toISOString().slice(0, 10) : '');
-      return bKey < aKey ? -1 : bKey > aKey ? 1 : 0;
+      const aTs = a.updatedAt ? new Date(a.updatedAt).getTime() : (lastActivity[a.label] || 0);
+      const bTs = b.updatedAt ? new Date(b.updatedAt).getTime() : (lastActivity[b.label] || 0);
+      return bTs - aTs;
     });
 
     if (!sorted.length) {
@@ -1921,7 +1936,8 @@
     const flight = parseFloat(el('newTripFlight').value) || 0;
     const hotel = parseFloat(el('newTripHotel').value) || 0;
     const { error } = await db.from('trips').upsert({
-      trip_label: name, flight_cost: flight, hotel_cost: hotel, start_date: startDate, end_date: endDate
+      trip_label: name, flight_cost: flight, hotel_cost: hotel, start_date: startDate, end_date: endDate,
+      updated_at: new Date().toISOString()
     });
     if (error) { alert('Couldn’t create the trip: ' + error.message); return; }
     closeNewTripModal();
