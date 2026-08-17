@@ -510,8 +510,10 @@
   .trip-item{flex-direction:column;align-items:stretch;gap:8px;}
   .trip-stats{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12.5px;color:var(--muted);padding:0 2px;}
   .trip-stats b{color:var(--ink);font-weight:600;}
-  .trip-stats .trip-net-pos{color:var(--profit);font-weight:600;}
-  .trip-stats .trip-net-neg{color:var(--danger);font-weight:600;}
+  /* Not scoped to .trip-stats — buildCatalogRow() reuses these same classes for the profit
+     figure on ordinary catalog rows, outside of any .trip-stats container. */
+  .trip-net-pos{color:var(--profit);font-weight:600;}
+  .trip-net-neg{color:var(--danger);font-weight:600;}
   .trip-flight-row{display:flex;align-items:center;gap:8px;padding:0 2px;}
   .trip-flight-row label{font-size:11.5px;color:var(--muted-2);flex:none;}
   .trip-flight-row input{
