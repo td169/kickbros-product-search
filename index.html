@@ -2066,9 +2066,14 @@
     select.value = names.includes(current) ? current : '';
   }
 
-  function fmtParisTime(iso) {
+  // Matches how every airline/travel site shows a flight: departure in the origin airport's
+  // own local time, arrival in the destination airport's — not everything converted to one
+  // timezone. UK legs (outbound_departure, return_arrival) use London; Paris legs
+  // (outbound_arrival, return_departure) use Paris. The two differ by an hour for part of the
+  // year (BST vs CEST), so this isn't just a formatting nicety.
+  function fmtLocalTime(iso, tz) {
     if (!iso) return '—';
-    return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' });
+    return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: tz });
   }
 
   function renderPlanTripResults() {
@@ -2125,7 +2130,7 @@
       outLeg.className = 'plan-trip-result-leg';
       outLeg.textContent = (PLAN_TRIP_AIRPORT_NAMES[f.origin_airport] || f.origin_airport) + ' → ' +
         (PLAN_TRIP_AIRPORT_NAMES[f.destination_airport] || f.destination_airport) + ' · ' +
-        fmtParisTime(f.outbound_departure) + '–' + fmtParisTime(f.outbound_arrival) +
+        fmtLocalTime(f.outbound_departure, 'Europe/London') + '–' + fmtLocalTime(f.outbound_arrival, 'Europe/Paris') +
         (f.outbound_airline ? ' · ' + f.outbound_airline : '');
       card.appendChild(outLeg);
 
@@ -2133,7 +2138,7 @@
       retLeg.className = 'plan-trip-result-leg';
       retLeg.textContent = (PLAN_TRIP_AIRPORT_NAMES[f.destination_airport] || f.destination_airport) + ' → ' +
         (PLAN_TRIP_AIRPORT_NAMES[f.origin_airport] || f.origin_airport) + ' · ' +
-        fmtParisTime(f.return_departure) + '–' + fmtParisTime(f.return_arrival) +
+        fmtLocalTime(f.return_departure, 'Europe/Paris') + '–' + fmtLocalTime(f.return_arrival, 'Europe/London') +
         (f.return_airline ? ' · ' + f.return_airline : '');
       card.appendChild(retLeg);
 
