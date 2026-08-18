@@ -38,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent / "vendor"))
 # see CLAUDE.md's "Plan next trip" section for the full reasoning.
 VALID_OUTBOUND_WEEKDAYS = {0, 1, 2}
 PARIS_TZ = ZoneInfo("Europe/Paris")
+UK_TZ = ZoneInfo("Europe/London")
 DEFAULT_ARRIVAL_CUTOFF = "11:00"
 DEFAULT_DEPARTURE_WINDOW = ("21:00", "23:59")
 ROLLING_WINDOW_DAYS = 61  # matches the hotel scraper's own default price_n_days
@@ -102,6 +103,21 @@ def valid_outbound_dates(start: date, days: int, target_month: Optional[str]):
 def parse_hhmm(s: str):
     h, m = (int(x) for x in s.split(":"))
     return h, m
+
+
+def to_aware_iso(naive_str, tz):
+    """Duffel returns segment times as naive local wall-clock strings, no timezone info at all
+    (confirmed via --debug-offer against the live API). Postgres' timestamptz columns silently
+    reinterpret a naive string using the session's own timezone (UTC on Supabase) rather than
+    leaving the wall-clock value alone — so a genuinely-valid 22:05 Paris departure was getting
+    stored as 22:05 UTC, which reads back as 00:05 the next day in Paris (CEST, UTC+2). This
+    attaches the correct IANA timezone for whichever airport that time is actually local to
+    (`tz`) before the string ever reaches Supabase, so the stored instant is unambiguous and
+    reads back correctly everywhere, including in the browser's own Europe/Paris formatting."""
+    dt = datetime.fromisoformat(naive_str)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=tz)
+    return dt.isoformat()
 
 
 def duffel_search(session, origin, destination, out_date, ret_date, duffel_key, max_retries=4):
@@ -205,11 +221,13 @@ def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target
             "return_date": ret_date.isoformat(),
             "origin_airport": origin,
             "destination_airport": dest,
-            "outbound_departure": out_seg[0]["departing_at"],
-            "outbound_arrival": out_seg[-1]["arriving_at"],
+            # UK legs get Europe/London, Paris legs get Europe/Paris — the two differ by an hour
+            # for part of the year (BST vs CEST), so this isn't just cosmetic.
+            "outbound_departure": to_aware_iso(out_seg[0]["departing_at"], UK_TZ),
+            "outbound_arrival": to_aware_iso(out_seg[-1]["arriving_at"], PARIS_TZ),
             "outbound_airline": out_seg[0].get("operating_carrier", {}).get("name"),
-            "return_departure": ret_seg[0]["departing_at"],
-            "return_arrival": ret_seg[-1]["arriving_at"],
+            "return_departure": to_aware_iso(ret_seg[0]["departing_at"], PARIS_TZ),
+            "return_arrival": to_aware_iso(ret_seg[-1]["arriving_at"], UK_TZ),
             "return_airline": ret_seg[0].get("operating_carrier", {}).get("name"),
             "total_price": float(cheapest["total_amount"]),
             "currency": cheapest.get("total_currency", "GBP"),
