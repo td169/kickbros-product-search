@@ -650,6 +650,34 @@
   }
   .btn-add-trip:hover{background:var(--ink-hover);}
 
+  /* plan next trip */
+  .plan-trip-btn{width:100%;margin-bottom:14px;}
+  .plan-trip-checks{display:flex;gap:18px;margin-bottom:12px;flex-wrap:wrap;}
+  .plan-trip-check-group{flex:1;min-width:130px;}
+  .plan-trip-check-label{
+    font-size:11px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:6px;
+  }
+  .plan-trip-check{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--ink);padding:5px 0;cursor:pointer;}
+  .plan-trip-check input{accent-color:var(--ink);width:16px;height:16px;flex:none;}
+  .plan-trip-check .hint{color:var(--muted-2);font-size:11px;font-weight:400;}
+
+  .plan-trip-result{
+    background:var(--card-bg);border-radius:var(--radius-md);box-shadow:var(--shadow-card);
+    padding:14px;margin-bottom:10px;
+  }
+  .plan-trip-result-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px;}
+  .plan-trip-result-date{font-weight:700;font-size:14.5px;color:var(--ink);}
+  .plan-trip-result-total{font-weight:800;font-size:16px;color:var(--ink);flex:none;}
+  .plan-trip-result-leg{font-size:12.5px;color:var(--muted);line-height:1.6;}
+  .plan-trip-result-note{font-size:11.5px;color:var(--muted-2);font-style:italic;margin-top:4px;}
+  .plan-trip-use-btn{
+    width:100%;height:38px;margin-top:10px;border:none;border-radius:var(--radius-pill);
+    background:var(--ink);color:var(--on-ink);font-family:inherit;font-size:13.5px;font-weight:700;
+    cursor:pointer;transition:background .15s;
+  }
+  .plan-trip-use-btn:hover{background:var(--ink-hover);}
+
   /* bottom tab bar */
   .tabbar{
     position:fixed;left:0;right:0;bottom:0;
@@ -839,6 +867,7 @@
 
   <main class="view" id="tripsView">
     <div class="view-header"><h1>Trips</h1><button class="text-link" id="newTripBtn">New trip</button></div>
+    <button type="button" class="btn-pill plan-trip-btn" id="planTripBtn">✈ Plan next trip</button>
     <div class="cal-header">
       <button type="button" class="cal-nav" id="calPrevBtn" aria-label="Previous month">‹</button>
       <button type="button" class="cal-month-btn" id="calMonthBtn">Month Year</button>
@@ -886,6 +915,45 @@
 
     <div class="catalog-list" id="tripDetailList"></div>
     <p class="empty-state" id="tripDetailEmpty">No products in this trip yet.</p>
+  </main>
+
+  <main class="view" id="planTripView">
+    <div class="view-header">
+      <button class="text-link" id="planTripBack">← Trips</button>
+    </div>
+    <h1>Plan next trip</h1>
+    <p class="sub">Land in Paris by 11:00, one night, fly back 21:00–23:59 the next day. Outbound
+      Mon/Tue/Wed only. Prices refresh automatically every few days — this isn't a live search.</p>
+
+    <div class="field">
+      <label>Month</label>
+      <input type="month" id="planTripMonth">
+    </div>
+
+    <div class="plan-trip-checks">
+      <div class="plan-trip-check-group">
+        <div class="plan-trip-check-label">From</div>
+        <label class="plan-trip-check"><input type="checkbox" id="originSEN" checked> Southend</label>
+        <label class="plan-trip-check"><input type="checkbox" id="originLTN" checked> Luton</label>
+        <label class="plan-trip-check"><input type="checkbox" id="originSTN" checked> Stansted</label>
+      </div>
+      <div class="plan-trip-check-group">
+        <div class="plan-trip-check-label">To</div>
+        <label class="plan-trip-check"><input type="checkbox" id="destCDG" checked> Paris CDG</label>
+        <label class="plan-trip-check"><input type="checkbox" id="destORY" checked> Orly</label>
+        <label class="plan-trip-check"><input type="checkbox" id="destBVA"> Beauvais <span class="hint">~1h15 coach transfer into Paris</span></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Hotel <span class="hint">optional</span></label>
+      <select id="planTripHotelPin"><option value="">Cheapest available</option></select>
+    </div>
+
+    <div id="planTripResults"></div>
+    <p class="empty-state" id="planTripEmpty">No scanned prices yet for these filters — results
+      refresh automatically every few days, or trigger a fresh scan from this repo's Actions tab
+      on GitHub if you don't want to wait.</p>
   </main>
 
   <div class="modal-overlay" id="newTripOverlay">
@@ -1939,19 +2007,191 @@
     openTripDetail(label);
   });
 
+  // ---- plan next trip ----
+  // Reads pre-computed prices from Supabase — never calls Duffel/Scrapfly itself. Those run
+  // server-side on a schedule via .github/workflows/scan-trips.yml + scripts/scan_trips.py (see
+  // CLAUDE.md for why: Duffel's API doesn't send CORS headers, so a browser can't call it
+  // directly, and the hotel scrape needs a Python runtime + a key that must stay server-side).
+  // Both tables are small (a few hundred rows), so filtering/ranking here is instant client-side
+  // work — no progress bar needed, unlike a live per-click scan.
+  let flightPricesCache = [];
+  let hotelPricesCache = [];
+  const PLAN_TRIP_AIRPORT_NAMES = { SEN: 'Southend', LTN: 'Luton', STN: 'Stansted', CDG: 'Paris CDG', ORY: 'Orly', BVA: 'Beauvais' };
+
+  async function loadFlightPrices() {
+    if (!db) return [];
+    const { data, error } = await db.from('flight_prices').select('*');
+    if (error) { console.error('loadFlightPrices', error); return []; }
+    return data || [];
+  }
+  async function loadHotelPrices() {
+    if (!db) return [];
+    const { data, error } = await db.from('hotel_prices').select('*');
+    if (error) { console.error('loadHotelPrices', error); return []; }
+    return data || [];
+  }
+
+  function openPlanTrip() {
+    Object.keys(views).forEach(k => views[k].classList.remove('active'));
+    el('tripDetailView').classList.remove('active');
+    el('planTripView').classList.add('active');
+    tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === 'trips'));
+    document.body.dataset.tab = 'trips';
+    filterPanel.classList.remove('open');
+    el('tripsDock').classList.remove('show');
+
+    if (!el('planTripMonth').value) {
+      const next = new Date();
+      next.setMonth(next.getMonth() + 1);
+      el('planTripMonth').value = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0');
+    }
+
+    loadFlightPrices().then(rows => {
+      flightPricesCache = rows;
+      renderPlanTripResults();
+    });
+    loadHotelPrices().then(rows => {
+      hotelPricesCache = rows;
+      populateHotelPinSelect();
+      renderPlanTripResults();
+    });
+  }
+
+  function populateHotelPinSelect() {
+    const select = el('planTripHotelPin');
+    const current = select.value;
+    const names = Array.from(new Set(hotelPricesCache.map(h => h.hotel_name))).sort();
+    select.innerHTML = '<option value="">Cheapest available</option>' +
+      names.map(n => '<option value="' + n.replace(/"/g, '&quot;') + '">' + n + '</option>').join('');
+    select.value = names.includes(current) ? current : '';
+  }
+
+  function fmtParisTime(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' });
+  }
+
+  function renderPlanTripResults() {
+    const wrap = el('planTripResults');
+    const empty = el('planTripEmpty');
+    wrap.innerHTML = '';
+
+    const month = el('planTripMonth').value; // "YYYY-MM"
+    const origins = ['SEN', 'LTN', 'STN'].filter(code => el('origin' + code).checked);
+    const dests = ['CDG', 'ORY', 'BVA'].filter(code => el('dest' + code).checked);
+    const pinnedHotel = el('planTripHotelPin').value;
+
+    const candidates = flightPricesCache
+      .filter(f => (!month || f.outbound_date.startsWith(month)) && origins.includes(f.origin_airport) && dests.includes(f.destination_airport))
+      .map(f => {
+        let hotelPrice = null;
+        if (pinnedHotel) {
+          const match = hotelPricesCache.find(h => h.hotel_name === pinnedHotel && h.stay_date === f.outbound_date);
+          if (match) hotelPrice = match.nightly_price;
+        } else {
+          const matches = hotelPricesCache.filter(h => h.stay_date === f.outbound_date);
+          if (matches.length) hotelPrice = matches.reduce((a, b) => (a.nightly_price <= b.nightly_price ? a : b)).nightly_price;
+        }
+        return { flight: f, hotelPrice, total: f.total_price + (hotelPrice || 0) };
+      })
+      .sort((a, b) => {
+        if (a.total !== b.total) return a.total - b.total;
+        const aLuton = a.flight.origin_airport === 'LTN', bLuton = b.flight.origin_airport === 'LTN';
+        return aLuton === bLuton ? 0 : aLuton ? -1 : 1;
+      })
+      .slice(0, 8);
+
+    if (!candidates.length) { empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+
+    candidates.forEach(c => {
+      const f = c.flight;
+      const card = document.createElement('div');
+      card.className = 'plan-trip-result';
+
+      const header = document.createElement('div');
+      header.className = 'plan-trip-result-header';
+      const dateSpan = document.createElement('span');
+      dateSpan.className = 'plan-trip-result-date';
+      dateSpan.textContent = new Date(f.outbound_date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+      const totalSpan = document.createElement('span');
+      totalSpan.className = 'plan-trip-result-total';
+      totalSpan.textContent = fmtGBP(c.total);
+      header.appendChild(dateSpan);
+      header.appendChild(totalSpan);
+      card.appendChild(header);
+
+      const outLeg = document.createElement('div');
+      outLeg.className = 'plan-trip-result-leg';
+      outLeg.textContent = (PLAN_TRIP_AIRPORT_NAMES[f.origin_airport] || f.origin_airport) + ' → ' +
+        (PLAN_TRIP_AIRPORT_NAMES[f.destination_airport] || f.destination_airport) + ' · ' +
+        fmtParisTime(f.outbound_departure) + '–' + fmtParisTime(f.outbound_arrival) +
+        (f.outbound_airline ? ' · ' + f.outbound_airline : '');
+      card.appendChild(outLeg);
+
+      const retLeg = document.createElement('div');
+      retLeg.className = 'plan-trip-result-leg';
+      retLeg.textContent = (PLAN_TRIP_AIRPORT_NAMES[f.destination_airport] || f.destination_airport) + ' → ' +
+        (PLAN_TRIP_AIRPORT_NAMES[f.origin_airport] || f.origin_airport) + ' · ' +
+        fmtParisTime(f.return_departure) + '–' + fmtParisTime(f.return_arrival) +
+        (f.return_airline ? ' · ' + f.return_airline : '');
+      card.appendChild(retLeg);
+
+      if (c.hotelPrice != null) {
+        const hotelLeg = document.createElement('div');
+        hotelLeg.className = 'plan-trip-result-leg';
+        hotelLeg.textContent = 'Hotel · ' + fmtGBP(c.hotelPrice) + '/night (flight ' + fmtGBP(f.total_price) + ')';
+        card.appendChild(hotelLeg);
+      } else {
+        const note = document.createElement('div');
+        note.className = 'plan-trip-result-note';
+        note.textContent = 'Hotel price not available yet for this date — showing flight-only total.';
+        card.appendChild(note);
+      }
+
+      const useBtn = document.createElement('button');
+      useBtn.type = 'button';
+      useBtn.className = 'plan-trip-use-btn';
+      useBtn.textContent = 'Use this trip →';
+      useBtn.addEventListener('click', () => {
+        const outDate = new Date(f.outbound_date + 'T00:00:00');
+        const monthName = outDate.toLocaleDateString('en-GB', { month: 'long' }).toUpperCase();
+        openNewTripModal({
+          name: 'PARIS ' + monthName + ' ' + outDate.getFullYear(),
+          start: f.outbound_date,
+          end: f.return_date,
+          flight: f.total_price,
+          hotel: c.hotelPrice || 0
+        });
+      });
+      card.appendChild(useBtn);
+
+      wrap.appendChild(card);
+    });
+  }
+
+  el('planTripBtn').addEventListener('click', openPlanTrip);
+  el('planTripBack').addEventListener('click', () => switchTab('trips'));
+  ['planTripMonth', 'originSEN', 'originLTN', 'originSTN', 'destCDG', 'destORY', 'destBVA', 'planTripHotelPin'].forEach(id => {
+    el(id).addEventListener('change', renderPlanTripResults);
+  });
+
   // ---- new trip modal ----
-  function openNewTripModal() {
-    el('newTripName').value = '';
-    el('newTripStart').value = '';
-    el('newTripEnd').value = '';
-    el('newTripFlight').value = '';
-    el('newTripHotel').value = '';
+  // `prefill` (optional) lets "Use this trip" from the Plan-next-trip screen pre-populate every
+  // field with a scanned candidate's numbers — still fully editable before creating, same as
+  // every other scraped/suggested figure elsewhere in this app.
+  function openNewTripModal(prefill) {
+    el('newTripName').value = (prefill && prefill.name) || '';
+    el('newTripStart').value = (prefill && prefill.start) || '';
+    el('newTripEnd').value = (prefill && prefill.end) || '';
+    el('newTripFlight').value = (prefill && prefill.flight != null) ? prefill.flight.toFixed(2) : '';
+    el('newTripHotel').value = (prefill && prefill.hotel != null) ? prefill.hotel.toFixed(2) : '';
     el('newTripOverlay').classList.add('open');
     setTimeout(() => el('newTripName').focus(), 50);
   }
   function closeNewTripModal() { el('newTripOverlay').classList.remove('open'); }
 
-  el('newTripBtn').addEventListener('click', openNewTripModal);
+  el('newTripBtn').addEventListener('click', () => openNewTripModal());
   el('newTripCancel').addEventListener('click', closeNewTripModal);
   el('newTripClose').addEventListener('click', closeNewTripModal);
   el('newTripOverlay').addEventListener('click', (e) => { if (e.target === el('newTripOverlay')) closeNewTripModal(); });
@@ -2079,6 +2319,7 @@
   function switchTab(name) {
     Object.keys(views).forEach(k => views[k].classList.toggle('active', k === name));
     el('tripDetailView').classList.remove('active');
+    el('planTripView').classList.remove('active');
     tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     document.body.dataset.tab = name;
     filterPanel.classList.remove('open');

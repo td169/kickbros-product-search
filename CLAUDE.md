@@ -271,3 +271,74 @@ commit. (The Supabase anon key is safe to expose client-side by Supabase's own d
 is controlled by the `products` table's row-level-security policy, not by keeping the key
 secret — but it's still kept out of the committed source rather than hardcoded, for
 consistency with the other tokens and in case the policy is tightened later.)
+
+### "Plan next trip" (Trips tab → `#planTripBtn`)
+
+Scans for the cheapest valid 24-hour Paris trip: land by 11:00, one night, hotel on Rue
+Saint-Honoré between Place de la Concorde and the Louvre, fly back 21:00–23:59 the next day,
+outbound **Mon/Tue/Wed only** (not Thu — Thursday would put the return on Friday, which the
+pattern also bans; the original spec's own wording conflicted on this, resolved by dropping
+Thursday from the outbound set so every rule holds without exception).
+
+**This is entirely server-side — do not try to call Duffel or scrape Booking.com from
+`index.html`.** Confirmed empirically: `api.duffel.com/air/offer_requests` sends no
+`Access-Control-Allow-Origin` header on either an OPTIONS preflight or the actual POST, so
+browsers block it outright. The hotel side has its own server-side requirement too — same
+reasoning as the Apify scraper originally being ruled out for Dior/LV, just more so: it needs a
+Python runtime and a key (`SCRAPFLY_KEY`) that must never reach the browser.
+
+Both run in `.github/workflows/scan-trips.yml` (scheduled every 3 days, plus `workflow_dispatch`
+for an on-demand run with optional `target_month`/cutoff-time inputs) via `scripts/scan_trips.py`,
+writing to two Supabase tables the client only ever reads from:
+
+```sql
+create table flight_prices (
+  id uuid primary key default gen_random_uuid(),
+  outbound_date date not null,
+  return_date date not null,
+  origin_airport text not null,        -- SEN / LTN / STN
+  destination_airport text not null,   -- CDG / ORY / BVA
+  outbound_departure timestamptz, outbound_arrival timestamptz, outbound_airline text,
+  return_departure timestamptz, return_arrival timestamptz, return_airline text,
+  total_price numeric, currency text default 'GBP', scraped_at timestamptz default now(),
+  unique (outbound_date, origin_airport, destination_airport)
+);
+create table hotel_prices (
+  id uuid primary key default gen_random_uuid(),
+  hotel_name text, booking_url text, stay_date date,
+  nightly_price numeric, currency text default 'EUR', scraped_at timestamptz default now(),
+  unique (hotel_name, stay_date)
+);
+```
+Both need `enable row level security` + an `allow all` policy, same as `trips`. **Neither table
+exists on the live database yet** — until they do, `loadFlightPrices`/`loadHotelPrices` fail
+closed (empty arrays, logged) and the Plan-next-trip screen just shows its empty state.
+
+The workflow needs **four** repository secrets: the already-added `SCRAPFLY_KEY`, plus
+`DUFFEL_KEY`, `SUPABASE_URL`, and `SUPABASE_ANON_KEY` (the latter two only live in browser
+localStorage today — the Action needs its own copies to write results; safe to expose per the
+Tokens section above, this is just about the Action actually having them).
+
+Origins are a **fixed set** (Southend/Luton/Stansted) — never add Gatwick/Heathrow/City as
+options. Destinations default to CDG+Orly; Beauvais is always scanned server-side too (so the
+data exists) but defaults off client-side via a checkbox, with a coach-transfer-time note, since
+its ~1h15 transfer eats into the 11:00 arrival margin.
+
+`scripts/vendor/bookingcom.py` is **vendored, not original code** — from
+`github.com/scrapfly/scrapfly-scrapers` (NPOSL-3.0), kept byte-identical below its attribution
+header except `BASE_CONFIG["country"]` changed from `"US"` to `"GB"`. See the header comment for
+why vendoring is fine here (personal tool, not redistributed) despite the non-profit-flavored
+license. The pinned hotel list inside `scripts/scan_trips.py` needs real, verified Booking.com
+URLs for hotels actually on Rue Saint-Honoré between Concorde and the Louvre — check that list
+first if hotel results look wrong or the scan comes back empty.
+
+Arrival/departure time cutoffs (11:00 / 21:00–23:59) are **fixed constants** in
+`scripts/scan_trips.py`, not a live control in the browser — filtering happens during the
+scheduled scan, so a client-side time picker wouldn't change anything already computed. A
+manually-triggered `workflow_dispatch` run can override them without any UI for it.
+
+The client (`openPlanTrip`/`renderPlanTripResults` in `index.html`) is a pure read + rank +
+"Use this trip" screen: filters `flight_prices` by month/origin/destination checkboxes, joins
+each candidate to the cheapest (or a pinned) `hotel_prices` row for that date, sorts by total
+ascending (Luton first on ties), shows the top 8, and "Use this trip" pre-fills the existing
+New Trip modal (`openNewTripModal(prefill)`) rather than creating anything without review.

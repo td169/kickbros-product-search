@@ -1,0 +1,54 @@
+name: Scan next-trip flight & hotel prices
+
+on:
+  schedule:
+    # Every 3 days at 06:00 UTC. Adjust this if Duffel's per-search cost turns out to make a
+    # tighter or looser cadence more sensible once you've seen a real bill — see CLAUDE.md.
+    - cron: "0 6 */3 * *"
+  workflow_dispatch:
+    inputs:
+      target_month:
+        description: "Scan a specific month (YYYY-MM) instead of the default rolling window"
+        required: false
+        type: string
+      arrival_cutoff:
+        description: "Latest acceptable outbound arrival time, Europe/Paris (HH:MM)"
+        required: false
+        default: "11:00"
+        type: string
+      departure_window_start:
+        description: "Earliest acceptable return departure time, Europe/Paris (HH:MM)"
+        required: false
+        default: "21:00"
+        type: string
+      departure_window_end:
+        description: "Latest acceptable return departure time, Europe/Paris (HH:MM)"
+        required: false
+        default: "23:59"
+        type: string
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests "scrapfly-sdk[all]" loguru
+
+      - name: Run scan
+        env:
+          SCRAPFLY_KEY: ${{ secrets.SCRAPFLY_KEY }}
+          DUFFEL_KEY: ${{ secrets.DUFFEL_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          python3 scripts/scan_trips.py \
+            ${{ inputs.target_month && format('--target-month {0}', inputs.target_month) || '' }} \
+            --arrival-cutoff "${{ inputs.arrival_cutoff || '11:00' }}" \
+            --departure-window-start "${{ inputs.departure_window_start || '21:00' }}" \
+            --departure-window-end "${{ inputs.departure_window_end || '23:59' }}"
