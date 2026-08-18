@@ -202,7 +202,7 @@ def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target
             log(f"  [dry-run] would search {o} -> {dest}, out {d}, back {d + timedelta(days=1)}")
         if len(combos) > 5:
             log(f"  [dry-run] ...and {len(combos) - 5} more")
-        return rows
+        return rows, dates
 
     session = requests.Session()
     for i, (out_date, origin, dest) in enumerate(combos, 1):
@@ -233,7 +233,7 @@ def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target
             "currency": cheapest.get("total_currency", "GBP"),
         })
         time.sleep(DUFFEL_REQUEST_DELAY)
-    return rows
+    return rows, dates
 
 
 def scan_hotels(dry_run):
@@ -302,6 +302,26 @@ def upsert_supabase(table, rows, on_conflict, supabase_url, supabase_key):
         log(f"  upserted {len(rows)} row(s) into {table}")
 
 
+def delete_stale_flight_rows(dates, supabase_url, supabase_key):
+    """Upserting only ever adds/refreshes rows for combos that ARE currently valid — a combo
+    that used to have a valid offer but doesn't anymore (schedule/pricing changed between runs)
+    would otherwise sit there forever with stale, possibly-wrong data. Found exactly this after
+    the timezone storage bug fix: 3 rows from the earlier corrupted run stayed behind because
+    the corrected run found no valid offer for those exact date+route combos, so nothing
+    upserted over them. Delete every row in the scanned date range before upserting the fresh
+    set, so the table always reflects exactly what this run actually found."""
+    if not dates:
+        return
+    resp = requests.delete(
+        f"{supabase_url.rstrip('/')}/rest/v1/flight_prices"
+        f"?outbound_date=gte.{min(dates).isoformat()}&outbound_date=lte.{max(dates).isoformat()}",
+        headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"},
+        timeout=30,
+    )
+    if not resp.ok:
+        log(f"  delete_stale_flight_rows failed: {resp.status_code} {resp.text[:300]}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
@@ -351,10 +371,11 @@ def main():
         log("=== Flights (skipped) ===")
     else:
         log("=== Flights ===")
-        flight_rows = scan_flights(duffel_key, args.dry_run, args.arrival_cutoff,
-                                    args.departure_window_start, args.departure_window_end, args.target_month)
+        flight_rows, scanned_dates = scan_flights(duffel_key, args.dry_run, args.arrival_cutoff,
+                                                    args.departure_window_start, args.departure_window_end, args.target_month)
         log(f"Found {len(flight_rows)} valid flight combination(s)")
         if not args.dry_run:
+            delete_stale_flight_rows(scanned_dates, supabase_url, supabase_key)
             upsert_supabase("flight_prices", flight_rows, "outbound_date,origin_airport,destination_airport",
                              supabase_url, supabase_key)
 
