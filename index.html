@@ -659,7 +659,7 @@
     color:var(--muted);margin-bottom:6px;
   }
   .plan-trip-check{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--ink);padding:5px 0;cursor:pointer;}
-  .plan-trip-check input{accent-color:var(--ink);width:16px;height:16px;flex:none;}
+  .plan-trip-check input{accent-color:var(--profit);width:16px;height:16px;flex:none;}
   .plan-trip-check .hint{color:var(--muted-2);font-size:11px;font-weight:400;}
 
   .plan-trip-result{
@@ -2099,7 +2099,7 @@
         const aLuton = a.flight.origin_airport === 'LTN', bLuton = b.flight.origin_airport === 'LTN';
         return aLuton === bLuton ? 0 : aLuton ? -1 : 1;
       })
-      .slice(0, 8);
+      .slice(0, 15);
 
     if (!candidates.length) { empty.style.display = 'block'; return; }
     empty.style.display = 'none';
