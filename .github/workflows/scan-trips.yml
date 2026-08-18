@@ -26,6 +26,16 @@ on:
         required: false
         default: "23:59"
         type: string
+      skip_flights:
+        description: "Skip the flight scan (useful for testing the hotel side alone, without re-spending on Duffel)"
+        required: false
+        default: false
+        type: boolean
+      skip_hotels:
+        description: "Skip the hotel scrape"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   scan:
@@ -51,4 +61,6 @@ jobs:
             ${{ inputs.target_month && format('--target-month {0}', inputs.target_month) || '' }} \
             --arrival-cutoff "${{ inputs.arrival_cutoff || '11:00' }}" \
             --departure-window-start "${{ inputs.departure_window_start || '21:00' }}" \
-            --departure-window-end "${{ inputs.departure_window_end || '23:59' }}"
+            --departure-window-end "${{ inputs.departure_window_end || '23:59' }}" \
+            ${{ inputs.skip_flights == true && '--skip-flights' || '' }} \
+            ${{ inputs.skip_hotels == true && '--skip-hotels' || '' }}

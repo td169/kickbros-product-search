@@ -306,13 +306,22 @@ create table flight_prices (
 create table hotel_prices (
   id uuid primary key default gen_random_uuid(),
   hotel_name text, booking_url text, stay_date date,
-  nightly_price numeric, currency text default 'EUR', scraped_at timestamptz default now(),
+  nightly_price numeric, currency text default 'GBP', scraped_at timestamptz default now(),
   unique (hotel_name, stay_date)
 );
 ```
-Both need `enable row level security` + an `allow all` policy, same as `trips`. **Neither table
-exists on the live database yet** — until they do, `loadFlightPrices`/`loadHotelPrices` fail
-closed (empty arrays, logged) and the Plan-next-trip screen just shows its empty state.
+`currency` on `hotel_prices` is GBP, not EUR — `scan_hotels()` always sets it explicitly per row
+(the vendored scraper's `BASE_CONFIG["country"] = "GB"` means Booking.com returns prices
+pre-converted to GBP, formatted as e.g. `"£342"`; parsed by stripping everything but digits/`.`
+before `float()` — a first real run crashed trying to `float("£342")` directly).
+
+Both tables need `enable row level security` + an `allow all` policy, same as `trips` — a first
+live run caught that the policy hadn't actually taken even though the tables had been created;
+inserts failed with `42501` until the `create policy` statements were re-run explicitly. Both
+tables exist on the live database now, with working policies. If a future session finds them
+missing again (or a new environment/fork), `loadFlightPrices`/`loadHotelPrices` fail closed
+(empty arrays, logged) and the Plan-next-trip screen just shows its empty state rather than
+erroring — that's the fallback to expect, not a bug to chase.
 
 The workflow needs **four** repository secrets: the already-added `SCRAPFLY_KEY`, plus
 `DUFFEL_KEY`, `SUPABASE_URL`, and `SUPABASE_ANON_KEY` (the latter two only live in browser

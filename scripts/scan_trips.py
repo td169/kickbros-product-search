@@ -20,6 +20,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 from datetime import date, datetime, timedelta
@@ -244,11 +245,18 @@ def scan_hotels(dry_run):
                     continue
                 if stay_date.weekday() not in VALID_OUTBOUND_WEEKDAYS or not day.get("available"):
                     continue
+                # avgPriceFormatted is a display string like "£342" or "1,234" (with country
+                # set to GB in the vendored scraper's BASE_CONFIG, it comes back with a £
+                # symbol) — a first real run crashed on `float("£342")` directly.
+                price_str = re.sub(r"[^\d.]", "", str(day.get("avgPriceFormatted", "")))
+                if not price_str:
+                    continue
                 rows.append({
                     "hotel_name": hotel["name"],
                     "booking_url": hotel["url"],
                     "stay_date": stay_date.isoformat(),
-                    "nightly_price": float(day["avgPriceFormatted"]),
+                    "nightly_price": float(price_str),
+                    "currency": "GBP",  # matches BASE_CONFIG's country:"GB" in bookingcom.py
                 })
 
     asyncio.run(run())
@@ -283,6 +291,9 @@ def main():
     parser.add_argument("--arrival-cutoff", default=DEFAULT_ARRIVAL_CUTOFF)
     parser.add_argument("--departure-window-start", default=DEFAULT_DEPARTURE_WINDOW[0])
     parser.add_argument("--departure-window-end", default=DEFAULT_DEPARTURE_WINDOW[1])
+    parser.add_argument("--skip-flights", action="store_true",
+                         help="Skip the (expensive, paid-per-search) flight scan — for iterating on the hotel side alone")
+    parser.add_argument("--skip-hotels", action="store_true", help="Skip the hotel scrape")
     args = parser.parse_args()
 
     duffel_key = os.environ.get("DUFFEL_KEY")
@@ -291,25 +302,33 @@ def main():
     supabase_key = os.environ.get("SUPABASE_ANON_KEY")
 
     if not args.dry_run:
-        missing = [n for n, v in [("DUFFEL_KEY", duffel_key), ("SCRAPFLY_KEY", scrapfly_key),
-                                   ("SUPABASE_URL", supabase_url), ("SUPABASE_ANON_KEY", supabase_key)] if not v]
+        needed = [("DUFFEL_KEY", duffel_key)] if not args.skip_flights else []
+        needed += [("SCRAPFLY_KEY", scrapfly_key)] if not args.skip_hotels else []
+        needed += [("SUPABASE_URL", supabase_url), ("SUPABASE_ANON_KEY", supabase_key)]
+        missing = [n for n, v in needed if not v]
         if missing:
             log(f"Missing required env vars: {', '.join(missing)} (or pass --dry-run)")
             sys.exit(1)
 
-    log("=== Flights ===")
-    flight_rows = scan_flights(duffel_key, args.dry_run, args.arrival_cutoff,
-                                args.departure_window_start, args.departure_window_end, args.target_month)
-    log(f"Found {len(flight_rows)} valid flight combination(s)")
-    if not args.dry_run:
-        upsert_supabase("flight_prices", flight_rows, "outbound_date,origin_airport,destination_airport",
-                         supabase_url, supabase_key)
+    if args.skip_flights:
+        log("=== Flights (skipped) ===")
+    else:
+        log("=== Flights ===")
+        flight_rows = scan_flights(duffel_key, args.dry_run, args.arrival_cutoff,
+                                    args.departure_window_start, args.departure_window_end, args.target_month)
+        log(f"Found {len(flight_rows)} valid flight combination(s)")
+        if not args.dry_run:
+            upsert_supabase("flight_prices", flight_rows, "outbound_date,origin_airport,destination_airport",
+                             supabase_url, supabase_key)
 
-    log("\n=== Hotels ===")
-    hotel_rows = scan_hotels(args.dry_run)
-    log(f"Found {len(hotel_rows)} hotel/date price(s)")
-    if not args.dry_run:
-        upsert_supabase("hotel_prices", hotel_rows, "hotel_name,stay_date", supabase_url, supabase_key)
+    if args.skip_hotels:
+        log("\n=== Hotels (skipped) ===")
+    else:
+        log("\n=== Hotels ===")
+        hotel_rows = scan_hotels(args.dry_run)
+        log(f"Found {len(hotel_rows)} hotel/date price(s)")
+        if not args.dry_run:
+            upsert_supabase("hotel_prices", hotel_rows, "hotel_name,stay_date", supabase_url, supabase_key)
 
     log("\nDone." if not args.dry_run else "\n[dry-run] Done — nothing written, no paid calls made.")
 
