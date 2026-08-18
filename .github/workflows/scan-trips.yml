@@ -36,6 +36,11 @@ on:
         required: false
         default: false
         type: boolean
+      debug_offer:
+        description: "ORIGIN,DEST,YYYY-MM-DD — debug a single Duffel search, no Supabase writes"
+        required: false
+        default: ""
+        type: string
 
 jobs:
   scan:
@@ -63,4 +68,5 @@ jobs:
             --departure-window-start "${{ inputs.departure_window_start || '21:00' }}" \
             --departure-window-end "${{ inputs.departure_window_end || '23:59' }}" \
             ${{ inputs.skip_flights == true && '--skip-flights' || '' }} \
-            ${{ inputs.skip_hotels == true && '--skip-hotels' || '' }}
+            ${{ inputs.skip_hotels == true && '--skip-hotels' || '' }} \
+            ${{ inputs.debug_offer && format('--debug-offer {0}', inputs.debug_offer) || '' }}

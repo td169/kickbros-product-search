@@ -294,12 +294,31 @@ def main():
     parser.add_argument("--skip-flights", action="store_true",
                          help="Skip the (expensive, paid-per-search) flight scan — for iterating on the hotel side alone")
     parser.add_argument("--skip-hotels", action="store_true", help="Skip the hotel scrape")
+    parser.add_argument("--debug-offer", default=None,
+                         help="ORIGIN,DEST,YYYY-MM-DD — runs a single Duffel search and prints every "
+                              "returned offer's raw segment times + validation verdict, no Supabase writes")
     args = parser.parse_args()
 
     duffel_key = os.environ.get("DUFFEL_KEY")
     scrapfly_key = os.environ.get("SCRAPFLY_KEY")
     supabase_url = os.environ.get("SUPABASE_URL")
     supabase_key = os.environ.get("SUPABASE_ANON_KEY")
+
+    if args.debug_offer:
+        origin, dest, out_date_str = args.debug_offer.split(",")
+        out_date = date.fromisoformat(out_date_str)
+        ret_date = out_date + timedelta(days=1)
+        session = requests.Session()
+        offers = duffel_search(session, origin, dest, out_date, ret_date, duffel_key)
+        log(f"{len(offers)} offer(s) returned for {origin}->{dest} {out_date}")
+        for i, o in enumerate(offers):
+            out_segs = o["slices"][0]["segments"]
+            ret_segs = o["slices"][1]["segments"]
+            valid = offer_is_valid(o, args.arrival_cutoff, args.departure_window_start, args.departure_window_end)
+            log(f"  offer {i}: total_amount={o.get('total_amount')} {o.get('total_currency')} valid={valid}")
+            log(f"    outbound: {out_segs[0]['departing_at']} -> {out_segs[-1]['arriving_at']}")
+            log(f"    return:   {ret_segs[0]['departing_at']} -> {ret_segs[-1]['arriving_at']}")
+        return
 
     if not args.dry_run:
         needed = [("DUFFEL_KEY", duffel_key)] if not args.skip_flights else []
