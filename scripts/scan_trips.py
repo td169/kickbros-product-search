@@ -29,7 +29,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent / "vendor"))
 
 # ---- fixed business rules (see CLAUDE.md — do not make these generic) ----
 # Outbound Mon(0)/Tue(1)/Wed(2) only — Thursday would put the return on Friday, which the
@@ -40,6 +40,10 @@ PARIS_TZ = ZoneInfo("Europe/Paris")
 DEFAULT_ARRIVAL_CUTOFF = "11:00"
 DEFAULT_DEPARTURE_WINDOW = ("21:00", "23:59")
 ROLLING_WINDOW_DAYS = 61  # matches the hotel scraper's own default price_n_days
+# A first real run at 0.2s between calls hit Duffel's rate limit almost immediately (nearly all
+# 225 searches came back 429). 1.0s is untested but a much safer starting point — tune this
+# down carefully if it turns out to be overly conservative, watching for 429s in the log either way.
+DUFFEL_REQUEST_DELAY = 1.0
 
 # Fixed set — do not expand to other London airports (Gatwick/Heathrow/City) via config.
 ORIGIN_AIRPORTS = ["SEN", "LTN", "STN"]
@@ -99,27 +103,38 @@ def parse_hhmm(s: str):
     return h, m
 
 
-def duffel_search(session, origin, destination, out_date, ret_date, duffel_key):
-    resp = session.post(
-        DUFFEL_URL,
-        headers={
-            "Authorization": f"Bearer {duffel_key}",
-            "Duffel-Version": "v2",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        json={
-            "data": {
-                "slices": [
-                    {"origin": origin, "destination": destination, "departure_date": out_date.isoformat()},
-                    {"origin": destination, "destination": origin, "departure_date": ret_date.isoformat()},
-                ],
-                "passengers": [{"type": "adult"}],
-                "cabin_class": "economy",
-            }
-        },
-        timeout=30,
-    )
+def duffel_search(session, origin, destination, out_date, ret_date, duffel_key, max_retries=4):
+    """POSTs one round-trip offer_request, retrying on 429 with backoff. A first real run hit
+    Duffel's rate limit almost immediately at the original 0.2s pace between calls (225 searches
+    nearly all came back 429) — this is why both the delay in scan_flights() and this retry
+    logic exist now; without the retry, a rate-limited request was just silently dropped."""
+    for attempt in range(max_retries):
+        resp = session.post(
+            DUFFEL_URL,
+            headers={
+                "Authorization": f"Bearer {duffel_key}",
+                "Duffel-Version": "v2",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            json={
+                "data": {
+                    "slices": [
+                        {"origin": origin, "destination": destination, "departure_date": out_date.isoformat()},
+                        {"origin": destination, "destination": origin, "departure_date": ret_date.isoformat()},
+                    ],
+                    "passengers": [{"type": "adult"}],
+                    "cabin_class": "economy",
+                }
+            },
+            timeout=30,
+        )
+        if resp.status_code == 429:
+            wait = float(resp.headers.get("Retry-After", 2 ** (attempt + 1)))
+            log(f"    rate limited, waiting {wait:.0f}s (attempt {attempt + 1}/{max_retries})")
+            time.sleep(wait)
+            continue
+        break
     if not resp.ok:
         log(f"    Duffel error {resp.status_code} for {origin}->{destination} {out_date}: {resp.text[:200]}")
         return []
@@ -179,7 +194,7 @@ def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target
         offers = duffel_search(session, origin, dest, out_date, ret_date, duffel_key)
         valid_offers = [o for o in offers if offer_is_valid(o, arrival_cutoff, dep_start, dep_end)]
         if not valid_offers:
-            time.sleep(0.2)
+            time.sleep(DUFFEL_REQUEST_DELAY)
             continue
         cheapest = min(valid_offers, key=lambda o: float(o["total_amount"]))
         out_seg = cheapest["slices"][0]["segments"]
@@ -198,7 +213,7 @@ def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target
             "total_price": float(cheapest["total_amount"]),
             "currency": cheapest.get("total_currency", "GBP"),
         })
-        time.sleep(0.2)
+        time.sleep(DUFFEL_REQUEST_DELAY)
     return rows
 
 
