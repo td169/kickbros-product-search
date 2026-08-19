@@ -265,17 +265,30 @@ def scan_hotels(dry_run, supabase_url, supabase_key):
                     continue
                 if stay_date.weekday() not in VALID_OUTBOUND_WEEKDAYS or not day.get("available"):
                     continue
-                # avgPriceFormatted is a display string like "£342" or "1,234" (with country
-                # set to GB in the vendored scraper's BASE_CONFIG, it comes back with a £
-                # symbol) — a first real run crashed on `float("£342")` directly.
-                price_str = re.sub(r"[^\d.]", "", str(day.get("avgPriceFormatted", "")))
+                # avgPriceFormatted is a display string like "£342" (with country set to GB in
+                # the vendored scraper's BASE_CONFIG, it comes back with a £ symbol) — a first
+                # real run crashed on `float("£342")` directly. It never shows pence/cents in
+                # practice (every value seen has been a whole number), so any "." that appears
+                # is a thousands separator, not a decimal point — a run against the full 18-hotel
+                # list found 6 rows where keeping the "." turned e.g. "1.400" (real: £1,400) into
+                # float 1.4, six wildly-wrong nightly prices slipping through undetected. Strip
+                # ALL non-digit characters (not just non-digit-non-period) instead.
+                price_str = re.sub(r"[^\d]", "", str(day.get("avgPriceFormatted", "")))
                 if not price_str:
+                    continue
+                nightly_price = float(price_str)
+                # Defense in depth: no genuine Paris hotel/apartment in this list charges under
+                # £30/night — discard anything that low rather than trust a number that's
+                # obviously still wrong, whatever the cause.
+                if nightly_price < 30:
+                    log(f"    discarding implausible price {nightly_price} for {stay_date} "
+                        f"(raw: {day.get('avgPriceFormatted')!r})")
                     continue
                 rows.append({
                     "hotel_name": hotel["name"],
                     "booking_url": hotel["booking_url"],
                     "stay_date": stay_date.isoformat(),
-                    "nightly_price": float(price_str),
+                    "nightly_price": nightly_price,
                     "currency": "GBP",  # matches BASE_CONFIG's country:"GB" in bookingcom.py
                 })
 
