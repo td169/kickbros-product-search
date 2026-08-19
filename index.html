@@ -283,7 +283,8 @@
   body.hide-sensitive #totalProfitVal,
   body.hide-sensitive #totalSpendVal,
   body.hide-sensitive .catalog-sale,
-  body.hide-sensitive .catalog-profit{
+  body.hide-sensitive .catalog-profit,
+  body.hide-sensitive .trip-figure{
     filter:blur(6px);
     user-select:none;
   }
@@ -928,7 +929,7 @@
       </div>
 
       <div class="card-footnote">
-        <span id="footnote">Prices scraped live via Apify — worth a glance before you commit.</span>
+        <span id="footnote"></span>
         <button id="refreshRate">refresh rate</button>
       </div>
       <div class="status-row">
@@ -1163,7 +1164,7 @@
         <input type="number" id="setReseller" step="0.01" value="3.04">
       </div>
 
-      <div class="settings-note">All of the above are saved in this browser's local storage so you don't have to re-enter them. Apify: get one free at apify.com → Settings → API tokens. Serper (optional): for Dior/Louis Vuitton, it suggests a name/image/reference price from Google's indexed page instead — always double-check before using. Get a free key at serper.dev. Supabase URL/anon key: from your project's Settings → API — this is what makes the Catalog shared across every device instead of stuck on one browser; the anon key is safe to expose client-side by design, access is controlled by the table's row-level-security policy instead. <button type="button" id="forgetToken">Forget saved tokens</button></div>
+      <div class="settings-note"><button type="button" id="forgetToken">Forget saved tokens</button></div>
     </div>
   </main>
 
@@ -1522,7 +1523,7 @@
           ' — enter prices manually below.')
       : (ukPrice == null || frPrice == null)
       ? 'One or both prices weren’t picked up automatically — check and enter manually below.'
-      : 'Prices scraped live via Apify — worth a glance before you commit.';
+      : '';
     return { productName, imageUrl, ukPrice, frPrice, notes };
   }
 
@@ -1765,8 +1766,6 @@
     const manualMode = !!(brandCfg && brandCfg.scrapeBlocked);
     if (manualMode) {
       card.classList.add('manual-mode');
-      el('manualBannerText').textContent = 'Open the two listings below, then type the prices you see into the highlighted fields.';
-      el('manualBanner').classList.add('show');
       el('frPrice').placeholder = 'tap here';
       el('ukPrice').placeholder = 'tap here';
     }
@@ -1775,8 +1774,7 @@
     const rate = await fetchRate().catch(() => null);
     renderCard(
       entry.brand, entry.product_name, entry.image_url || null, entry.url_uk, entry.url_fr,
-      entry.uk_retail, entry.eu_retail, rate,
-      manualMode ? 'Enter both prices by hand — this brand can’t be scraped automatically.' : 'Prices scraped live via Apify — worth a glance before you commit.'
+      entry.uk_retail, entry.eu_retail, rate
     );
     el('quantityInput').value = entry.quantity != null ? entry.quantity : 1;
     renderStatusPill(el('statusBtn'), entry.status || 'stock');
@@ -1995,8 +1993,8 @@
     // exactly what made an edited trip jump to a confusing spot: a trip you just edited today
     // could still have an earlier end_date than an untouched trip, and used to rank below it.
     const sorted = trips.slice().sort((a, b) => {
-      const aTs = a.updatedAt ? new Date(a.updatedAt).getTime() : (lastActivity[a.label] || 0);
-      const bTs = b.updatedAt ? new Date(b.updatedAt).getTime() : (lastActivity[b.label] || 0);
+      const aTs = Math.max(a.updatedAt ? new Date(a.updatedAt).getTime() : 0, lastActivity[a.label] || 0);
+      const bTs = Math.max(b.updatedAt ? new Date(b.updatedAt).getTime() : 0, lastActivity[b.label] || 0);
       return bTs - aTs;
     });
 
@@ -2092,8 +2090,8 @@
     const net = profit - flightCost - hotelCost;
     el('tripDetailStats').innerHTML =
       items.length + (items.length === 1 ? ' item' : ' items') +
-      ' · Revenue <b>' + fmtGBP(revenue) + '</b> · Profit <b>' + fmtGBP(profit) + '</b> · ' +
-      'Net profit <b class="' + (net >= 0 ? 'trip-net-pos' : 'trip-net-neg') + '">' + fmtGBP(net) + '</b>';
+      ' · Revenue <b class="trip-figure">' + fmtGBP(revenue) + '</b> · Profit <b class="trip-figure">' + fmtGBP(profit) + '</b> · ' +
+      'Net profit <b class="trip-figure ' + (net >= 0 ? 'trip-net-pos' : 'trip-net-neg') + '">' + fmtGBP(net) + '</b>';
 
     renderTripDetailList(items);
   }
@@ -2710,7 +2708,7 @@
     el('frPrice').value = frPrice != null ? frPrice : '';
     el('ukPrice').value = ukPrice != null ? ukPrice : '';
     el('rateVal').textContent = rate ? ('1 € = £' + rate.toFixed(4)) : '—';
-    el('footnote').textContent = notes || 'Prices scraped live via Apify — worth a glance before you commit.';
+    el('footnote').textContent = notes || '';
     current.rate = rate;
     current.imageUrl = imageUrl || null;
     saleOverridden = false;
@@ -2891,7 +2889,6 @@
       }
 
       if (current.catalogId === id && anyApplied) {
-        el('footnote').textContent = 'Name/image/price suggested from Google’s indexed page (via Serper) — not a live scrape, so double-check before you commit.';
         updateCatalogEntry(id, buildCatalogPatch());
       }
     } catch (e) { console.error('trySerperFill failed for', id, e); }
@@ -2908,7 +2905,7 @@
       if (!img) img = await serperImageSearch(frUrl, token).catch(err => { console.error('serperImageSearch (FR)', id, err); return null; });
       if (!img) {
         console.warn('tryImageFallback: no image found for', id);
-        if (current.catalogId === id) el('footnote').textContent = 'Couldn’t find an image for this listing via Google — try again later or add one manually.';
+        if (current.catalogId === id) el('footnote').textContent = 'Couldn’t find an image for this listing — try again later or add one manually.';
         return;
       }
 
@@ -2946,17 +2943,17 @@
     if (existing) {
       current.nameSource = existing.product_name ? 'user' : (guessedName ? 'guess' : null);
       el('manualBannerText').textContent = 'Already in your catalog (checked ' + timeAgo(new Date(existing.created_at).getTime()) + ') — updating that entry instead of adding a duplicate.';
+      el('manualBanner').classList.add('show');
     } else if (cached) {
       current.nameSource = cached.productName ? 'user' : (guessedName ? 'guess' : null);
       el('manualBannerText').textContent = 'You checked this ' + brandLabel + ' item before (' + timeAgo(cached.lastSeenTs) + ') — pre-filled from that, but prices can change, so double-check.';
+      el('manualBanner').classList.add('show');
     } else {
       current.nameSource = guessedName ? 'guess' : null;
-      el('manualBannerText').textContent = 'Open the two listings below, then type the prices you see into the highlighted fields.';
     }
-    el('manualBanner').classList.add('show');
     renderCard(brandLabel, initialName, initialImage, ukUrl, frUrl, initialUkPrice, initialFrPrice, current.rate,
       existing ? 'Already in your catalog — updating that entry rather than creating a new one.' :
-      cached ? 'Pre-filled from a previous check of this item — worth a quick glance before you commit.' : 'Enter both prices by hand below.');
+      cached ? 'Pre-filled from a previous check of this item — worth a quick glance before you commit.' : '');
     el('frPrice').placeholder = 'tap here';
     el('ukPrice').placeholder = 'tap here';
     renderStatusPill(el('statusBtn'), (existing && existing.status) || 'stock');
