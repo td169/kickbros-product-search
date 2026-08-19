@@ -257,12 +257,32 @@
 
   /* result card */
   .card{
+    position:relative;
     display:none;
     background:var(--card-bg);
     border-radius:var(--radius-lg);
     box-shadow:var(--shadow-card);
     padding:14px 14px 6px;
     margin-bottom:8px;
+  }
+  .eye-btn{
+    background:none;border:none;cursor:pointer;
+    color:var(--muted);
+    display:flex;align-items:center;justify-content:center;
+    padding:4px;border-radius:50%;flex:none;
+  }
+  .eye-btn:hover{color:var(--ink);}
+  .card-eye-btn{position:absolute;top:12px;right:12px;z-index:1;}
+  /* Privacy toggle — blurs figures someone glancing at the screen shouldn't read,
+     without hiding the fields entirely (values are still there, just obscured). */
+  body.hide-sensitive #saleVal,
+  body.hide-sensitive #resellerVal,
+  body.hide-sensitive #profitSaleVal,
+  body.hide-sensitive #profitResellerVal,
+  body.hide-sensitive .catalog-sale,
+  body.hide-sensitive .catalog-profit{
+    filter:blur(6px);
+    user-select:none;
   }
   .card.show{display:block;}
   /* The reopened dock is a fixed overlay sitting on top of the card, not resizing it —
@@ -818,6 +838,7 @@
     </div>
 
     <div class="card" id="card">
+      <button type="button" class="eye-btn card-eye-btn" id="pricesEyeBtn" aria-label="Hide sale price, reseller price and profit" aria-pressed="false"></button>
       <div class="manual-banner" id="manualBanner">
         <span class="manual-banner-icon">✎</span>
         <span id="manualBannerText"></span>
@@ -905,6 +926,7 @@
   <main class="view" id="catalogView">
     <div class="view-header">
       <h1>Catalog</h1>
+      <button type="button" class="eye-btn" id="catalogEyeBtn" aria-label="Hide sale price and profit" aria-pressed="false"></button>
     </div>
     <input type="text" class="catalog-search" id="catalogSearch" placeholder="Search catalog…" autocomplete="off">
     <div class="active-filter-row" id="activeFilterRow" style="display:none;">
@@ -1210,6 +1232,8 @@
   `);
 
   const CHEV_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" class="catalog-chev"><polyline points="9 18 15 12 9 6"/></svg>';
+  const EYE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.8 21.8 0 0 1 5.06-6.06M9.9 4.24A10.4 10.4 0 0 1 12 4c7 0 11 8 11 8a21.7 21.7 0 0 1-2.61 3.94M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 
   const el = id => document.getElementById(id);
   const filterBtn = el('filterBtn'), filterPanel = el('filterPanel');
@@ -1621,18 +1645,30 @@
 
     // Just the bare figures — FR / UK / sale price, then profit in green (or red if negative) —
     // no brand, no "FR price:"-style labels, no status. Keeps each row to one glance.
+    // Sale price and profit get their own spans (rather than one joined string) so the
+    // privacy eye toggle can blur just those two, leaving FR/UK retail visible.
     const sub = document.createElement('span');
     sub.className = 'catalog-sub';
-    const priceBits = [];
-    if (entry.eu_retail != null) priceBits.push('€' + Number(entry.eu_retail).toFixed(2));
-    if (entry.uk_retail != null) priceBits.push('£' + Number(entry.uk_retail).toFixed(2));
-    if (entry.sale_price != null) priceBits.push('£' + Number(entry.sale_price).toFixed(2));
-    sub.textContent = priceBits.join(' · ');
+    const priceParts = [];
+    if (entry.eu_retail != null) priceParts.push({ text: '€' + Number(entry.eu_retail).toFixed(2) });
+    if (entry.uk_retail != null) priceParts.push({ text: '£' + Number(entry.uk_retail).toFixed(2) });
+    if (entry.sale_price != null) priceParts.push({ text: '£' + Number(entry.sale_price).toFixed(2), sensitive: true });
+    priceParts.forEach((part, i) => {
+      if (i > 0) sub.appendChild(document.createTextNode(' · '));
+      if (part.sensitive) {
+        const span = document.createElement('span');
+        span.className = 'catalog-sale';
+        span.textContent = part.text;
+        sub.appendChild(span);
+      } else {
+        sub.appendChild(document.createTextNode(part.text));
+      }
+    });
     const profitVal = entry.total_profit != null ? entry.total_profit : entry.profit;
     if (profitVal != null) {
-      if (priceBits.length) sub.appendChild(document.createTextNode(' · '));
+      if (priceParts.length) sub.appendChild(document.createTextNode(' · '));
       const profitSpan = document.createElement('span');
-      profitSpan.className = profitVal >= 0 ? 'trip-net-pos' : 'trip-net-neg';
+      profitSpan.className = (profitVal >= 0 ? 'trip-net-pos' : 'trip-net-neg') + ' catalog-profit';
       profitSpan.textContent = (profitVal >= 0 ? '+' : '') + '£' + Number(profitVal).toFixed(2);
       sub.appendChild(profitSpan);
     }
@@ -1715,6 +1751,28 @@
   }
 
   el('catalogSearch').addEventListener('input', applyCatalogFilters);
+
+  // Privacy toggle: blurs sale price / reseller price / profit figures (Prices card and
+  // Catalog rows) without hiding the fields, so someone glancing at the screen can't read
+  // them. Shared across both views via a single body class + localStorage flag.
+  const HIDE_SENSITIVE_KEY = 'kickbros_hide_sensitive';
+  let hideSensitive = localStorage.getItem(HIDE_SENSITIVE_KEY) === '1';
+  function applyHideSensitive() {
+    document.body.classList.toggle('hide-sensitive', hideSensitive);
+    [el('pricesEyeBtn'), el('catalogEyeBtn')].forEach(btn => {
+      if (!btn) return;
+      btn.innerHTML = hideSensitive ? EYE_OFF_SVG : EYE_SVG;
+      btn.setAttribute('aria-pressed', String(hideSensitive));
+    });
+  }
+  function toggleHideSensitive() {
+    hideSensitive = !hideSensitive;
+    localStorage.setItem(HIDE_SENSITIVE_KEY, hideSensitive ? '1' : '0');
+    applyHideSensitive();
+  }
+  el('pricesEyeBtn').addEventListener('click', toggleHideSensitive);
+  el('catalogEyeBtn').addEventListener('click', toggleHideSensitive);
+  applyHideSensitive();
 
   el('clearFilterBtn').addEventListener('click', () => {
     catalogBrandFilter = null;
