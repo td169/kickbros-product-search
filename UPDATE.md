@@ -6,6 +6,43 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-08-19 — "Plan next trip" launched, plus navigation and polish fixes
+
+### New: Plan next trip
+
+The big addition this round — a screen (Trips tab → **Plan next trip**) that automatically
+scans for the cheapest valid 24-hour Paris trip in a given month: land by 11:00, one night,
+depart 21:00–23:59 the next day, flying out Mon/Tue/Wed only from Southend, Luton, or Stansted
+into CDG or Orly.
+
+- Runs entirely in the background on a schedule (flights via Duffel, hotels via Booking.com) and
+  writes results to your database — opening the screen is instant, no live searching or waiting.
+- Filter by hotel tier — **All / Standard / Luxury** — via a new pill-style selector, or switch
+  to **Cheapest Per**, which shows one card per tracked hotel (its own best deal for the month)
+  instead of just the overall cheapest 15.
+- Results show the full date range (e.g. "Tue 25 Aug – Wed 26 Aug"), a hotel photo, and the tier
+  badge. "Use this trip" pre-fills the New Trip form so you can review before creating anything.
+- Tracking 18 named hotels around Rue Saint-Honoré / the Louvre, split 9 Luxury / 9 Standard.
+- A handful of real bugs were caught and fixed while building this: flight times were briefly
+  getting stored in the wrong timezone (making valid flights look invalid), hotel prices over
+  ~£1,000 were being parsed wrong (Booking.com uses a "." as a thousands separator, not a
+  decimal), and stale flight data was lingering after a route stopped being valid. All confirmed
+  fixed against live scans.
+- Two of the 18 tracked hotels currently show little or no pricing — confirmed this is
+  Booking.com not exposing availability for those specific listings right now, not a bug on our
+  end. They'll reappear automatically once that changes.
+
+### Navigation and polish
+
+- Fixed a few places missing a way to back out: the New Trip modal and a reopened catalog item
+  both now have a proper X/back button.
+- Fixed catalog items silently reordering themselves when you revisited the list, and the trip
+  dock jumping around while editing.
+- Renamed the Prices tab heading to **KICKBROS HUB** and dropped the old disclaimer footnote.
+- Added an intro splash screen with the white KB logo on launch.
+
+---
+
 ## 2026-08-17 (later) — Trips became a calendar, plus a couple of real bugs fixed
 
 ### Trips tab redesign
