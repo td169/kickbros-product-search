@@ -279,6 +279,9 @@
   body.hide-sensitive #resellerVal,
   body.hide-sensitive #profitSaleVal,
   body.hide-sensitive #profitResellerVal,
+  body.hide-sensitive #discountVal,
+  body.hide-sensitive #totalProfitVal,
+  body.hide-sensitive #totalSpendVal,
   body.hide-sensitive .catalog-sale,
   body.hide-sensitive .catalog-profit{
     filter:blur(6px);
@@ -527,6 +530,18 @@
   .status-row{display:flex;align-items:center;gap:8px;padding:6px 0 2px;}
   .status-row-label{font-size:10.5px;color:var(--muted-2);}
   body.dock-open.result-active .status-row{display:none;}
+
+  /* Only shown when the card was reopened from the Catalog list — see cardReturnTo === 'catalog'
+     in renderCard(). Right-aligned as the card's last row rather than absolutely positioned, so
+     it never overlaps the footnote/status rows above it regardless of card height. */
+  .card-delete-row{display:none;justify-content:flex-end;padding:8px 0 2px;}
+  .card-delete-row.show{display:flex;}
+  .btn-delete-catalog{
+    background:none;border:1px solid var(--danger);color:var(--danger);
+    padding:7px 14px;border-radius:var(--radius-pill);
+    font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;
+  }
+  .btn-delete-catalog:hover{background:var(--danger);color:#fff;}
   .empty-state{color:var(--muted);font-size:13.5px;text-align:center;padding:70px 24px;line-height:1.6;}
 
   .trip-stats{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12.5px;color:var(--muted);padding:0 2px;}
@@ -634,6 +649,7 @@
   .modal h3{margin:0 0 14px;font-size:17px;font-weight:800;}
   .modal-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;}
   .modal-header h3{margin:0;}
+  .modal-text{margin:0;font-size:13.5px;line-height:1.5;color:var(--muted);}
   .modal-close{
     width:32px;height:32px;flex:none;border:none;border-radius:50%;
     background:var(--surface);color:var(--ink);font-size:20px;line-height:1;
@@ -641,7 +657,7 @@
   }
   .modal-close:hover{background:var(--surface-2);}
   .modal-actions{display:flex;gap:10px;margin-top:16px;}
-  .btn-secondary,.btn-primary{
+  .btn-secondary,.btn-primary,.btn-danger{
     flex:1;height:44px;border:none;border-radius:var(--radius-pill);
     font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:background .15s;
   }
@@ -649,6 +665,8 @@
   .btn-secondary:hover{background:var(--surface-2);}
   .btn-primary{background:var(--ink);color:var(--on-ink);}
   .btn-primary:hover{background:var(--ink-hover);}
+  .btn-danger{background:var(--danger);color:#fff;}
+  .btn-danger:hover{opacity:.88;}
   .modal-list .catalog-search{margin-bottom:10px;}
 
   /* trip detail */
@@ -920,6 +938,9 @@
       <div class="trip-add-row" id="tripAddRow">
         <button type="button" class="btn-add-trip" id="addToTripBtn">Add to trip →</button>
       </div>
+      <div class="card-delete-row" id="cardDeleteRow">
+        <button type="button" class="btn-delete-catalog" id="deleteCatalogBtn">Delete product</button>
+      </div>
     </div>
   </main>
 
@@ -1065,6 +1086,20 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="deleteConfirmOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Delete this product?</h3>
+        <button type="button" class="modal-close" id="deleteConfirmClose" aria-label="Close">×</button>
+      </div>
+      <p class="modal-text">This removes it from the catalog for good — it can't be undone.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="deleteConfirmCancel">Cancel</button>
+        <button type="button" class="btn-danger" id="deleteConfirmBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="catalogPickerOverlay">
     <div class="modal modal-list">
       <div class="modal-header">
@@ -1128,7 +1163,7 @@
         <input type="number" id="setReseller" step="0.01" value="3.04">
       </div>
 
-      <div class="settings-note">All of the above are saved in this browser's local storage so you don't have to re-enter them. Apify: get one free at apify.com → Settings → API tokens. Serper (optional): for Dior/Louis Vuitton, since their sites block direct scraping, it suggests a name/image/reference price from Google's indexed page instead — always double-check before using. Get a free key at serper.dev. Supabase URL/anon key: from your project's Settings → API — this is what makes the Catalog shared across every device instead of stuck on one browser; the anon key is safe to expose client-side by design, access is controlled by the table's row-level-security policy instead. <button type="button" id="forgetToken">Forget saved tokens</button></div>
+      <div class="settings-note">All of the above are saved in this browser's local storage so you don't have to re-enter them. Apify: get one free at apify.com → Settings → API tokens. Serper (optional): for Dior/Louis Vuitton, it suggests a name/image/reference price from Google's indexed page instead — always double-check before using. Get a free key at serper.dev. Supabase URL/anon key: from your project's Settings → API — this is what makes the Catalog shared across every device instead of stuck on one browser; the anon key is safe to expose client-side by design, access is controlled by the table's row-level-security policy instead. <button type="button" id="forgetToken">Forget saved tokens</button></div>
     </div>
   </main>
 
@@ -1482,7 +1517,7 @@
     const ukBlocked = ukResult && (ukResult.blocked || ukResult['#error']);
     const frBlocked = frResult && (frResult.blocked || frResult['#error']);
     const notes = (ukBlocked || frBlocked)
-      ? ('The site blocked the scrape (bot protection) on ' +
+      ? ('Couldn’t confirm the price automatically on ' +
           [ukBlocked && 'the UK listing', frBlocked && 'the FR listing'].filter(Boolean).join(' and ') +
           ' — enter prices manually below.')
       : (ukPrice == null || frPrice == null)
@@ -1523,6 +1558,12 @@
     if (!db || !id) return;
     const { error } = await db.from('products').update(patch).eq('id', id);
     if (error) console.error('updateCatalogEntry', error);
+  }
+  async function deleteCatalogEntry(id) {
+    if (!db || !id) return false;
+    const { error } = await db.from('products').delete().eq('id', id);
+    if (error) { console.error('deleteCatalogEntry', error); return false; }
+    return true;
   }
   // Prevents duplicate catalog rows when the same product gets checked again — matches on
   // brand+sku (getSku(url) is just the URL's last path segment, stable across re-checks of the
@@ -1724,7 +1765,7 @@
     const manualMode = !!(brandCfg && brandCfg.scrapeBlocked);
     if (manualMode) {
       card.classList.add('manual-mode');
-      el('manualBannerText').textContent = entry.brand + ' blocks automated price checks — open the two listings below, then type the prices you see into the highlighted fields.';
+      el('manualBannerText').textContent = 'Open the two listings below, then type the prices you see into the highlighted fields.';
       el('manualBanner').classList.add('show');
       el('frPrice').placeholder = 'tap here';
       el('ukPrice').placeholder = 'tap here';
@@ -2676,6 +2717,7 @@
     el('saleVal').value = '';
     el('tripAddRow').classList.toggle('show', !!current.tripLabel);
     el('cardBackBtn').classList.toggle('show', !!cardReturnTo);
+    el('cardDeleteRow').classList.toggle('show', cardReturnTo === 'catalog');
     card.classList.add('show');
     document.body.classList.add('result-active');
     document.body.classList.remove('dock-open');
@@ -2697,6 +2739,7 @@
     cardReturnTo = null;
     cardReturnTripLabel = null;
     el('cardBackBtn').classList.remove('show');
+    el('cardDeleteRow').classList.remove('show');
     setTimeout(() => urlInput.focus(), 100);
   }
   el('newCheckBtn').addEventListener('click', startNewCheck);
@@ -2704,6 +2747,22 @@
   el('cardBackBtn').addEventListener('click', () => {
     if (cardReturnTo === 'tripDetail' && cardReturnTripLabel) openTripDetail(cardReturnTripLabel);
     else if (cardReturnTo === 'catalog') switchTab('catalog');
+  });
+
+  function closeDeleteConfirm() { el('deleteConfirmOverlay').classList.remove('open'); }
+  el('deleteCatalogBtn').addEventListener('click', () => el('deleteConfirmOverlay').classList.add('open'));
+  el('deleteConfirmCancel').addEventListener('click', closeDeleteConfirm);
+  el('deleteConfirmClose').addEventListener('click', closeDeleteConfirm);
+  el('deleteConfirmOverlay').addEventListener('click', e => { if (e.target === el('deleteConfirmOverlay')) closeDeleteConfirm(); });
+  el('deleteConfirmBtn').addEventListener('click', async () => {
+    const id = current.catalogId;
+    closeDeleteConfirm();
+    const ok = await deleteCatalogEntry(id);
+    if (!ok) { setStatus('Could not delete — try again.', true); return; }
+    cardReturnTo = null;
+    cardReturnTripLabel = null;
+    current.catalogId = null;
+    switchTab('catalog');
   });
 
   function resetCardMode() {
@@ -2892,12 +2951,12 @@
       el('manualBannerText').textContent = 'You checked this ' + brandLabel + ' item before (' + timeAgo(cached.lastSeenTs) + ') — pre-filled from that, but prices can change, so double-check.';
     } else {
       current.nameSource = guessedName ? 'guess' : null;
-      el('manualBannerText').textContent = brandLabel + ' blocks automated price checks — open the two listings below, then type the prices you see into the highlighted fields.';
+      el('manualBannerText').textContent = 'Open the two listings below, then type the prices you see into the highlighted fields.';
     }
     el('manualBanner').classList.add('show');
     renderCard(brandLabel, initialName, initialImage, ukUrl, frUrl, initialUkPrice, initialFrPrice, current.rate,
       existing ? 'Already in your catalog — updating that entry rather than creating a new one.' :
-      cached ? 'Pre-filled from a previous check of this item — worth a quick glance before you commit.' : 'Enter both prices by hand — this brand can’t be scraped automatically.');
+      cached ? 'Pre-filled from a previous check of this item — worth a quick glance before you commit.' : 'Enter both prices by hand below.');
     el('frPrice').placeholder = 'tap here';
     el('ukPrice').placeholder = 'tap here';
     renderStatusPill(el('statusBtn'), (existing && existing.status) || 'stock');
