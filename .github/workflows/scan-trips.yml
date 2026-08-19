@@ -41,6 +41,16 @@ on:
         required: false
         default: ""
         type: string
+      resolve_hotels:
+        description: "One-off: resolve the hotel list (scripts/resolve_hotels.py) into tracked_hotels, instead of the normal price scan"
+        required: false
+        default: false
+        type: boolean
+      resolve_hotels_debug:
+        description: "One-off: test resolution for a single hotel name, print the match, write nothing"
+        required: false
+        default: ""
+        type: string
 
 jobs:
   scan:
@@ -56,6 +66,7 @@ jobs:
         run: pip install requests "scrapfly-sdk[all]" loguru
 
       - name: Run scan
+        if: ${{ inputs.resolve_hotels != true && inputs.resolve_hotels_debug == '' }}
         env:
           SCRAPFLY_KEY: ${{ secrets.SCRAPFLY_KEY }}
           DUFFEL_KEY: ${{ secrets.DUFFEL_KEY }}
@@ -70,3 +81,13 @@ jobs:
             ${{ inputs.skip_flights == true && '--skip-flights' || '' }} \
             ${{ inputs.skip_hotels == true && '--skip-hotels' || '' }} \
             ${{ inputs.debug_offer && format('--debug-offer {0}', inputs.debug_offer) || '' }}
+
+      - name: Resolve hotel list (one-off)
+        if: ${{ inputs.resolve_hotels == true || inputs.resolve_hotels_debug != '' }}
+        env:
+          SCRAPFLY_KEY: ${{ secrets.SCRAPFLY_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          python3 scripts/resolve_hotels.py \
+            ${{ inputs.resolve_hotels_debug && format('--debug-one "{0}"', inputs.resolve_hotels_debug) || '' }}
