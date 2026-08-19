@@ -666,6 +666,21 @@
   .plan-trip-check input{accent-color:var(--profit);width:16px;height:16px;flex:none;}
   .plan-trip-check .hint{color:var(--muted-2);font-size:11px;font-weight:400;}
 
+  /* segmented control (hotel tier / cheapest-per filter) — a pill-shaped tab strip, replacing
+     what used to be a plain native <select> */
+  .segmented{
+    display:flex;gap:2px;background:var(--surface);border-radius:var(--radius-pill);
+    padding:3px;
+  }
+  .segmented-btn{
+    flex:1;min-width:0;border:none;background:none;font-family:inherit;
+    font-size:10.5px;font-weight:600;color:var(--muted);
+    padding:8px 2px;border-radius:var(--radius-pill);cursor:pointer;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    transition:background .15s,color .15s;
+  }
+  .segmented-btn.active{background:var(--card-bg);color:var(--ink);box-shadow:var(--shadow-card);}
+
   .plan-trip-result{
     background:var(--card-bg);border-radius:var(--radius-md);box-shadow:var(--shadow-card);
     padding:14px;margin-bottom:10px;
@@ -981,11 +996,12 @@
 
     <div class="field">
       <label>Hotel tier</label>
-      <select id="planTripHotelTier">
-        <option value="all">All</option>
-        <option value="standard">Standard</option>
-        <option value="luxury">Luxury</option>
-      </select>
+      <div class="segmented" id="planTripHotelTier">
+        <button type="button" class="segmented-btn active" data-value="all">All</button>
+        <button type="button" class="segmented-btn" data-value="standard">Standard</button>
+        <button type="button" class="segmented-btn" data-value="luxury">Luxury</button>
+        <button type="button" class="segmented-btn" data-value="cheapest_per">Cheapest Per</button>
+      </div>
     </div>
 
     <div id="planTripResults"></div>
@@ -2116,6 +2132,34 @@
     return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
   }
 
+  // "Cheapest Per" mode: one card per tracked hotel (every hotel gets a chance to show up,
+  // regardless of tier — but only once each) using that specific hotel's own cheapest
+  // (flight + hotel) combo within the current month/origin/destination filters. This is a
+  // different question from the normal top-15 view — "what's the best deal at each property?"
+  // rather than "what are the overall cheapest trips, however concentrated on one or two
+  // hotels?" — so it gets its own candidate-building pass rather than just filtering the
+  // top-15 list down.
+  function computeCheapestPerHotelCandidates(month, origins, dests) {
+    const flightsInScope = flightPricesCache.filter(f =>
+      (!month || f.outbound_date.startsWith(month)) && origins.includes(f.origin_airport) && dests.includes(f.destination_airport)
+    );
+    const candidates = [];
+    trackedHotelsCache.forEach(hotel => {
+      let best = null;
+      flightsInScope.forEach(f => {
+        const match = hotelPricesCache.find(h => h.hotel_name === hotel.name && h.stay_date === f.outbound_date);
+        if (!match) return;
+        const total = f.total_price + match.nightly_price;
+        if (!best || total < best.total) {
+          best = { flight: f, hotelPrice: match.nightly_price, hotelName: hotel.name, total };
+        }
+      });
+      if (best) candidates.push(best);
+    });
+    candidates.sort((a, b) => a.total - b.total);
+    return candidates;
+  }
+
   function renderPlanTripResults() {
     const wrap = el('planTripResults');
     const empty = el('planTripEmpty');
@@ -2124,40 +2168,45 @@
     const month = el('planTripMonth').value; // "YYYY-MM"
     const origins = ['SEN', 'LTN', 'STN'].filter(code => el('origin' + code).checked);
     const dests = ['CDG', 'ORY'].filter(code => el('dest' + code).checked);
-    const tierFilter = el('planTripHotelTier').value; // all/standard/luxury
+    const tierFilter = currentHotelFilter; // all/standard/luxury/cheapest_per
 
     const hotelByName = {};
     trackedHotelsCache.forEach(h => { hotelByName[h.name] = h; });
 
-    // The per-date total-cost sort below is the entire joint optimization — for every valid
-    // date, total = (flight cost for that date) + (cheapest hotel price for that date, within
-    // the current tier filter). Sorting all candidates by that total ascending automatically
-    // surfaces whichever date has the best *combined* price; there's no separate step that
-    // finds the single cheapest hotel night and then searches for a matching flight, or vice
-    // versa — that would be redundant with what sorting the sums already does.
-    const candidates = flightPricesCache
-      .filter(f => (!month || f.outbound_date.startsWith(month)) && origins.includes(f.origin_airport) && dests.includes(f.destination_airport))
-      .map(f => {
-        const matches = hotelPricesCache.filter(h => {
-          if (h.stay_date !== f.outbound_date) return false;
-          if (tierFilter === 'all') return true;
-          const tracked = hotelByName[h.hotel_name];
-          return tracked && tracked.tier === tierFilter;
-        });
-        let hotelPrice = null, hotelName = null;
-        if (matches.length) {
-          const cheapest = matches.reduce((a, b) => (a.nightly_price <= b.nightly_price ? a : b));
-          hotelPrice = cheapest.nightly_price;
-          hotelName = cheapest.hotel_name;
-        }
-        return { flight: f, hotelPrice, hotelName, total: f.total_price + (hotelPrice || 0) };
-      })
-      .sort((a, b) => {
-        if (a.total !== b.total) return a.total - b.total;
-        const aLuton = a.flight.origin_airport === 'LTN', bLuton = b.flight.origin_airport === 'LTN';
-        return aLuton === bLuton ? 0 : aLuton ? -1 : 1;
-      })
-      .slice(0, 15);
+    let candidates;
+    if (tierFilter === 'cheapest_per') {
+      candidates = computeCheapestPerHotelCandidates(month, origins, dests).slice(0, 20);
+    } else {
+      // The per-date total-cost sort below is the entire joint optimization — for every valid
+      // date, total = (flight cost for that date) + (cheapest hotel price for that date, within
+      // the current tier filter). Sorting all candidates by that total ascending automatically
+      // surfaces whichever date has the best *combined* price; there's no separate step that
+      // finds the single cheapest hotel night and then searches for a matching flight, or vice
+      // versa — that would be redundant with what sorting the sums already does.
+      candidates = flightPricesCache
+        .filter(f => (!month || f.outbound_date.startsWith(month)) && origins.includes(f.origin_airport) && dests.includes(f.destination_airport))
+        .map(f => {
+          const matches = hotelPricesCache.filter(h => {
+            if (h.stay_date !== f.outbound_date) return false;
+            if (tierFilter === 'all') return true;
+            const tracked = hotelByName[h.hotel_name];
+            return tracked && tracked.tier === tierFilter;
+          });
+          let hotelPrice = null, hotelName = null;
+          if (matches.length) {
+            const cheapest = matches.reduce((a, b) => (a.nightly_price <= b.nightly_price ? a : b));
+            hotelPrice = cheapest.nightly_price;
+            hotelName = cheapest.hotel_name;
+          }
+          return { flight: f, hotelPrice, hotelName, total: f.total_price + (hotelPrice || 0) };
+        })
+        .sort((a, b) => {
+          if (a.total !== b.total) return a.total - b.total;
+          const aLuton = a.flight.origin_airport === 'LTN', bLuton = b.flight.origin_airport === 'LTN';
+          return aLuton === bLuton ? 0 : aLuton ? -1 : 1;
+        })
+        .slice(0, 15);
+    }
 
     if (!candidates.length) { empty.style.display = 'block'; return; }
     empty.style.display = 'none';
@@ -2269,8 +2318,17 @@
 
   el('planTripBtn').addEventListener('click', openPlanTrip);
   el('planTripBack').addEventListener('click', () => switchTab('trips'));
-  ['planTripMonth', 'originSEN', 'originLTN', 'originSTN', 'destCDG', 'destORY', 'planTripHotelTier'].forEach(id => {
+  ['planTripMonth', 'originSEN', 'originLTN', 'originSTN', 'destCDG', 'destORY'].forEach(id => {
     el(id).addEventListener('change', renderPlanTripResults);
+  });
+
+  let currentHotelFilter = 'all';
+  el('planTripHotelTier').querySelectorAll('.segmented-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentHotelFilter = btn.dataset.value;
+      el('planTripHotelTier').querySelectorAll('.segmented-btn').forEach(b => b.classList.toggle('active', b === btn));
+      renderPlanTripResults();
+    });
   });
 
   // ---- new trip modal ----
