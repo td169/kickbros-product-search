@@ -143,6 +143,28 @@ stay screen-only-guarded on purpose: unlike the image, they read/write live DOM 
 applying them to a stale id would mean writing into fields that belong to whatever's on screen
 now, which would corrupt the wrong product's name/price instead.)
 
+### A same-domain Serper result isn't automatically the right *page*
+
+`serperLookup`'s hostname-matching (see above) fixes "wrong domain" results, but not "right
+domain, wrong page." When Google hasn't indexed the exact product URL well — common for
+Dior/LV — the only same-domain result it has can be the brand's own homepage instead, with a
+title that's just the bare brand name (e.g. `"Dior"`). That used to get treated as a perfectly
+good product name and filled straight into `#prodName`, which is how a Dior check could come
+back with the product name literally showing "Dior" instead of an actual product name.
+
+Fixed in two places:
+- `serperLookup`'s candidate order is: same-domain result with a path that looks like a real
+  product page (`looksLikeProductPage` — path length > 15, i.e. not just `/`) → *any* result
+  that looks like a real product page even off-domain (a reseller with the real listing beats
+  the brand's own homepage) → the same-domain match anyway, shallow or not → whatever Google
+  ranked first. A homepage no longer wins just for matching the hostname.
+- `cleanTitle` is a second, independent safety net: if a title, once the trailing `| Brand`
+  stripped, is *just* the brand name on its own, it returns `null` instead of that bare name —
+  same as "no title at all." `applyName` in both `trySerperFill` and `trySerperPriceFallback`
+  checks the *cleaned* result before deciding whether to touch `#prodName`, not the raw title,
+  so this actually prevents the field from being filled rather than just cosmetically trimming
+  a bad value after the fact.
+
 ### Price parsing
 
 `parseMoney` must handle UK format (`1,090.00`, comma thousands / dot decimal) and FR format

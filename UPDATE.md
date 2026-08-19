@@ -26,6 +26,17 @@ miss the FR price than the UK price — it wasn't telling Google to search in Fr
 trusted whatever the top search result was even when that result was the wrong page entirely.
 Both fixed.
 
+### Fix: Dior (and other manual-entry) checks sometimes named the product just "Dior"
+
+Same root cause as the FR price bug above, one layer deeper: even after the fix, a "right
+domain" search result isn't always the right *page* — when Google hasn't indexed the specific
+product page, the only same-domain result on hand can be the brand's own homepage, with a title
+that's just the bare brand name. That was getting filled straight into the product name field.
+Now it looks for a result that actually looks like a real product page first (own site
+preferred, but a reseller's real listing beats the brand's blank homepage), and separately,
+never fills the name field with something that's just the brand name on its own — it leaves the
+field empty for you to type instead, which was always more honest than a fake-looking entry.
+
 ### Every brand now gets a second chance before asking you to type
 
 If a live scrape (Gucci, Moncler, Balenciaga, Goyard, Hermès) comes back without a price on one

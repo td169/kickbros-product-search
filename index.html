@@ -2854,12 +2854,25 @@
     if (!res.ok) return null;
     const data = await res.json();
     const results = (data && data.organic) || [];
-    // Prefer the first result whose link actually matches the target site rather than blindly
-    // trusting organic[0] — an unrelated top result (wrong domain, redirect stub, aggregator)
-    // used to come back as a silently empty/wrong price with no way to tell why.
-    const top = targetHostname
-      ? results.find(r => { try { return new URL(r.link).hostname.includes(targetHostname); } catch (e) { return false; } }) || results[0]
-      : results[0];
+    // Prefer a result whose link actually matches the target site rather than blindly trusting
+    // organic[0] — an unrelated top result (wrong domain, redirect stub, aggregator) used to
+    // come back as a silently empty/wrong price with no way to tell why. But a same-domain match
+    // isn't automatically the right *page* either: when Google hasn't indexed the exact product
+    // URL well, the only dior.com/etc result it has can be the brand's homepage or a category
+    // page — a real product page has a deep path (product code/slug), a homepage doesn't, so
+    // prefer a same-domain match that actually looks like one over the first same-domain match.
+    const looksLikeProductPage = link => { try { return new URL(link).pathname.replace(/\/+$/, '').length > 15; } catch (e) { return false; } };
+    const hostMatches = targetHostname
+      ? results.filter(r => { try { return new URL(r.link).hostname.includes(targetHostname); } catch (e) { return false; } })
+      : [];
+    // Order: a same-domain result that looks like a real product page (best) → any result at
+    // all that looks like a real product page, even off-domain (a reseller with the actual
+    // product beats the brand's own homepage) → the same-domain match anyway, shallow or not
+    // (still the right brand, better than nothing) → whatever Google ranked first.
+    const top = hostMatches.find(looksLikeProductPage)
+      || results.find(r => looksLikeProductPage(r.link))
+      || hostMatches[0]
+      || results[0];
     if (!top) return null;
     const text = [top.title, top.snippet].filter(Boolean).join(' ');
     const gbpMatch = text.match(/£\s?\d(?:[\d,.\s]*\d)?/);
@@ -2921,7 +2934,13 @@
   function cleanTitle(title, brandLabel) {
     if (!title) return null;
     const esc = brandLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return title.replace(new RegExp('\\s*[|\\-–—]\\s*' + esc + '.*$', 'i'), '').trim() || title;
+    const cleaned = title.replace(new RegExp('\\s*[|\\-–—]\\s*' + esc + '.*$', 'i'), '').trim() || title.trim();
+    // A result whose title is just the brand name (e.g. Google's cached result for the exact
+    // product URL didn't exist, so the search fell back to the brand's own homepage/category
+    // page instead) isn't a product name — it's no more useful than what's already shown
+    // separately as the brand, so treat it as no title at all rather than filling the name
+    // field with something that looks like a real (but wrong) entry.
+    return new RegExp('^' + esc + '$', 'i').test(cleaned) ? null : cleaned;
   }
 
   // Best-effort only: suggests name/image/price from Google's indexed snapshot of the page
@@ -2941,7 +2960,9 @@
     // not this stale lookup.
     function applyName(title) {
       if (!title || nameApplied || current.catalogId !== id || current.nameSource === 'user') return;
-      el('prodName').value = cleanTitle(title, brandLabel);
+      const cleaned = cleanTitle(title, brandLabel);
+      if (!cleaned) return;
+      el('prodName').value = cleaned;
       current.nameSource = 'serper';
       nameApplied = true; anyApplied = true;
     }
@@ -3030,7 +3051,9 @@
       // what's actually missing, never overwrite a real scrape result or something the user typed.
       if (!title || nameApplied || current.catalogId !== id) return;
       if (current.nameSource === 'user' || current.nameSource === 'scrape') return;
-      el('prodName').value = cleanTitle(title, brandLabel);
+      const cleaned = cleanTitle(title, brandLabel);
+      if (!cleaned) return;
+      el('prodName').value = cleaned;
       current.nameSource = 'serper';
       nameApplied = true;
     }
