@@ -49,29 +49,8 @@ DUFFEL_REQUEST_DELAY = 1.0
 
 # Fixed set — do not expand to other London airports (Gatwick/Heathrow/City) via config.
 ORIGIN_AIRPORTS = ["SEN", "LTN", "STN"]
-# CDG/ORY always scanned; BVA always scanned too (server-side) so the data exists whenever the
-# client's "include Beauvais" checkbox gets turned on — the checkbox only controls whether BVA
-# rows are *displayed*, not whether they're fetched.
-DESTINATION_AIRPORTS = ["CDG", "ORY", "BVA"]
-
-# Real hotels confirmed (address + live Booking.com URL both checked at implementation time) to
-# sit on Rue Saint-Honoré between Place de la Concorde and the Louvre — NOT the full length of
-# the street out toward Les Halles. Verify/update this list if hotel results look wrong or
-# empty; two candidates that seemed promising by name got dropped after checking further —
-# "Hôtel Londres Saint-Honoré" is actually on Rue Saint-Roch (a side street, not Rue
-# Saint-Honoré itself), and "Hôtel Royal Saint-Honoré" (221 rue Saint-Honoré, otherwise a great
-# match) closed for renovation in May 2025 — hotel names in this area lean on the street's
-# cachet loosely, so always confirm the actual street address before adding one here.
-PINNED_HOTELS = [
-    {
-        "name": "Hôtel Louvre Saint-Honoré",  # 141 rue Saint-Honoré, 75001
-        "url": "https://www.booking.com/hotel/fr/louvresainthonore.html",
-    },
-    {
-        "name": "Le Relais Saint-Honoré",  # 308 rue Saint-Honoré, 75001
-        "url": "https://www.booking.com/hotel/fr/lerelaissainthonore.html",
-    },
-]
+# Beauvais (BVA) was removed entirely per Temi's request — not just defaulted off. CDG/Orly only.
+DESTINATION_AIRPORTS = ["CDG", "ORY"]
 
 DUFFEL_URL = "https://api.duffel.com/air/offer_requests"
 
@@ -236,22 +215,45 @@ def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target
     return rows, dates
 
 
-def scan_hotels(dry_run):
+def load_tracked_hotels(supabase_url, supabase_key):
+    """The hotel list lives in Supabase now, not a hardcoded constant here — populated by the
+    one-off scripts/resolve_hotels.py, editable by adding/removing rows directly in Supabase
+    without a code change. Only returns hotels that actually have a resolved booking_url."""
+    if not supabase_url or not supabase_key:
+        return []
+    resp = requests.get(
+        f"{supabase_url.rstrip('/')}/rest/v1/tracked_hotels?select=name,booking_url",
+        headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"},
+        timeout=30,
+    )
+    if not resp.ok:
+        log(f"  load_tracked_hotels failed: {resp.status_code} {resp.text[:300]}")
+        return []
+    return [h for h in resp.json() if h.get("booking_url")]
+
+
+def scan_hotels(dry_run, supabase_url, supabase_key):
     rows = []
+    hotels = load_tracked_hotels(supabase_url, supabase_key)
+    if not hotels:
+        log("  no hotels found in tracked_hotels (or Supabase creds not given) — nothing to "
+            "scan. Run scripts/resolve_hotels.py first to populate it.")
+        return rows
+
     if dry_run:
-        for hotel in PINNED_HOTELS:
-            log(f"  [dry-run] would scrape {hotel['name']} ({hotel['url']}) for "
+        for hotel in hotels:
+            log(f"  [dry-run] would scrape {hotel['name']} ({hotel['booking_url']}) for "
                 f"{ROLLING_WINDOW_DAYS} days from today")
         return rows
 
     import bookingcom  # vendored — see scripts/vendor/bookingcom.py for provenance/license
 
     async def run():
-        for hotel in PINNED_HOTELS:
+        for hotel in hotels:
             log(f"  scraping {hotel['name']}...")
             try:
                 result = await bookingcom.scrape_hotel(
-                    hotel["url"], checkin=date.today().isoformat(), price_n_days=ROLLING_WINDOW_DAYS
+                    hotel["booking_url"], checkin=date.today().isoformat(), price_n_days=ROLLING_WINDOW_DAYS
                 )
             except Exception as e:
                 log(f"    failed: {e}")
@@ -271,7 +273,7 @@ def scan_hotels(dry_run):
                     continue
                 rows.append({
                     "hotel_name": hotel["name"],
-                    "booking_url": hotel["url"],
+                    "booking_url": hotel["booking_url"],
                     "stay_date": stay_date.isoformat(),
                     "nightly_price": float(price_str),
                     "currency": "GBP",  # matches BASE_CONFIG's country:"GB" in bookingcom.py
@@ -383,7 +385,7 @@ def main():
         log("\n=== Hotels (skipped) ===")
     else:
         log("\n=== Hotels ===")
-        hotel_rows = scan_hotels(args.dry_run)
+        hotel_rows = scan_hotels(args.dry_run, supabase_url, supabase_key)
         log(f"Found {len(hotel_rows)} hotel/date price(s)")
         if not args.dry_run:
             upsert_supabase("hotel_prices", hotel_rows, "hotel_name,stay_date", supabase_url, supabase_key)
