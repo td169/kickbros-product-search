@@ -89,13 +89,22 @@ async def resolve_one(name):
 
 
 def extract_url_and_image(result):
-    url = result.get("basicPropertyData", {}).get("pageName")
-    # Fall back to whatever URL-shaped field is present; the exact key varies by result shape.
+    # pageName is just the URL slug (e.g. "hotel-louvre-piemont"), not a full URL -- confirmed
+    # via --debug-one against the live API, matches the pattern of every booking_url already
+    # verified elsewhere in this project (scripts/scan_trips.py's PINNED_HOTELS pre-migration).
+    page_name = result.get("basicPropertyData", {}).get("pageName")
+    url = f"https://www.booking.com/hotel/fr/{page_name}.html" if page_name else None
+
+    # Photo paths come back relative (e.g. "/xdata/images/hotel/square600/...webp?k=..."), also
+    # confirmed live -- cf.bstatic.com is the CDN host used for every other Booking.com image
+    # URL seen in this project (scripts/vendor/bookingcom.py's own sample results).
     photo = None
     photos = result.get("basicPropertyData", {}).get("photos")
     if photos:
         main = photos.get("main", {})
-        photo = (main.get("highResUrl") or main.get("lowResUrl") or {}).get("relativeUrl")
+        rel = (main.get("highResUrl") or main.get("lowResUrl") or {}).get("relativeUrl")
+        if rel:
+            photo = f"https://cf.bstatic.com{rel}"
     return url, photo
 
 
