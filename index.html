@@ -181,6 +181,12 @@
   body.result-active #pricesView > .sub,
   body.result-active #pricesView > .list-row,
   body.result-active #pricesView > .manual-panel{display:none;}
+  /* ...except when startCheckFromUrl explicitly reopens the manual panel itself (unrecognised
+     brand, or a brand whose build() couldn't derive a UK/FR pair — see Loro Piana). That can
+     happen well after result-active is already set from an earlier check this session (it's
+     never unset), so .open needs enough specificity to win over the rule above, or the panel
+     it just asked to show stays invisible. */
+  body.result-active #pricesView > .manual-panel.open{display:flex;}
 
   /* search dock — pinned above the tab bar, Uber "Where to?"-style, so it's reachable with
      a thumb without scrolling. Visibility is its own state (dock-open), independent of
@@ -1253,6 +1259,50 @@
         uk: url.replace(/\/[a-z]{2}_[a-z]{2}\//, '/uk_en/'),
         fr: url.replace(/\/[a-z]{2}_[a-z]{2}\//, '/fr_fr/')
       })
+    },
+    hermes: { name:'Hermès', test: h => h.includes('hermes.com'),
+      // Genuine listings scrape fine (confirmed live: a real headless browser gets 200 + a
+      // real og:title on both fr/fr and uk/en URLs, no bot-blocking) — not scrapeBlocked.
+      // But the descriptive slug is independently translated per product (e.g.
+      // "sandales-oran" vs "oran-sandal") with no shared pattern, and — unlike Prada below —
+      // Hermès does NOT canonicalise on the product code: a locale-swapped URL that keeps the
+      // other locale's slug words 403s (confirmed live), and so does a slug-less/code-only
+      // URL. There's no way to derive one locale's link from the other, so don't guess —
+      // returning an identical uk/fr pair makes startCheckFromUrl's existing "couldn't work
+      // out the FR/UK pair — paste both manually" fallback kick in instead of shipping a
+      // broken link.
+      build: (url) => ({ uk: url, fr: url }),
+      detectLocale: (url) => /\/fr\/fr\//i.test(url) ? 'fr' : (/\/uk\/en\//i.test(url) ? 'uk' : null)
+    },
+    prada: { name:'Prada', test: h => h.includes('prada.com'), scrapeBlocked:true,
+      // Path-swap pattern works reliably: Prada's URL separates the descriptive slug from the
+      // product code (.../p/<slug>/<code>) and canonicalises on the code, so a locale-swapped
+      // URL that keeps the other locale's slug words still 200s and resolves to the right
+      // product (confirmed live — its own canonical link, no redirect needed).
+      // scrapeBlocked despite that: a plain fetch/curl gets the real page fine, but a real
+      // headless browser (Playwright, same technology Apify's web-scraper actor uses) hangs or
+      // gets ERR_HTTP2_PROTOCOL_ERROR on every attempt against this site specifically — a
+      // generic HTTP/2 site (apple.com) loads fine from the same environment, so this isn't a
+      // sandbox networking issue. That's consistent with anti-automation blocking that
+      // specifically targets headless-browser fingerprints rather than raw HTTP requests, which
+      // is exactly what Apify's actor looks like to the site. Verify with a real Apify token
+      // after deploy — flip this flag off if a live scrape actually succeeds.
+      build: (url) => ({
+        uk: url.replace(/\/[a-z]{2}\/[a-z]{2}\/p\//, '/gb/en/p/'),
+        fr: url.replace(/\/[a-z]{2}\/[a-z]{2}\/p\//, '/fr/fr/p/')
+      })
+    },
+    loropiana: { name:'Loro Piana', test: h => h.includes('loropiana.com'), scrapeBlocked:true,
+      // Confirmed live: every URL variant (real fr., real uk., even a same-code subdomain
+      // swap) comes back 403 outright — blocked at the network level, same as Dior/LV.
+      // Locale here is a subdomain (fr./uk.), not a path segment — and unlike every other brand
+      // above, the two locales use different trailing product codes for what's meant to be the
+      // same listing (confirmed against real example links), so there's no pattern to derive
+      // one locale's link from the other's at all. Deliberately returning an identical uk/fr
+      // pair makes startCheckFromUrl's existing "couldn't work out the FR/UK pair — paste both
+      // manually" fallback kick in, reusing that flow instead of building bespoke UI for this.
+      build: (url) => ({ uk: url, fr: url }),
+      detectLocale: (url) => /^https?:\/\/fr\./i.test(url) ? 'fr' : (/^https?:\/\/uk\./i.test(url) ? 'uk' : null)
     }
   };
 
@@ -2788,15 +2838,25 @@
   // Google's own crawler gets past bot protection that blocks us directly (sites allow-list
   // it for SEO) — Serper returns Google's results as JSON, with "organic" already excluding
   // shopping ads/sponsored results, so organic[0] is the first real listing.
-  async function serperLookup(url, token) {
+  async function serperLookup(url, token, targetHostname) {
+    // gl/hl locale hints matter here: Google's "exact URL as query" ranking is noticeably more
+    // forgiving for English/UK content than French, so an FR lookup without them is more likely
+    // to surface a weak/unrelated top result than the UK lookup does with the same technique.
+    const isFr = /\bfr[-_.]|\/fr\//i.test(url);
     const res = await fetch('https://google.serper.dev/search', {
       method: 'POST',
       headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ q: url, num: 5 })
+      body: JSON.stringify({ q: url, num: 5, gl: isFr ? 'fr' : 'gb', hl: isFr ? 'fr' : 'en' })
     });
     if (!res.ok) return null;
     const data = await res.json();
-    const top = data && data.organic && data.organic[0];
+    const results = (data && data.organic) || [];
+    // Prefer the first result whose link actually matches the target site rather than blindly
+    // trusting organic[0] — an unrelated top result (wrong domain, redirect stub, aggregator)
+    // used to come back as a silently empty/wrong price with no way to tell why.
+    const top = targetHostname
+      ? results.find(r => { try { return new URL(r.link).hostname.includes(targetHostname); } catch (e) { return false; } }) || results[0]
+      : results[0];
     if (!top) return null;
     const text = [top.title, top.snippet].filter(Boolean).join(' ');
     const gbpMatch = text.match(/£\s?\d(?:[\d,.\s]*\d)?/);
@@ -2861,12 +2921,12 @@
     }
 
     try {
-      const ukInfo = await serperLookup(ukUrl, token).catch(err => { console.error('serperLookup (UK)', id, err); return null; });
+      const ukInfo = await serperLookup(ukUrl, token, new URL(ukUrl).hostname).catch(err => { console.error('serperLookup (UK)', id, err); return null; });
       applyName(ukInfo && ukInfo.title);
       applyPrice('ukPrice', ukInfo ? parseMoney(ukInfo.gbpPrice) : null);
       if (current.catalogId === id) recalc();
 
-      const frInfo = await serperLookup(frUrl, token).catch(err => { console.error('serperLookup (FR)', id, err); return null; });
+      const frInfo = await serperLookup(frUrl, token, new URL(frUrl).hostname).catch(err => { console.error('serperLookup (FR)', id, err); return null; });
       applyName(frInfo && frInfo.title);
       applyPrice('frPrice', frInfo ? parseMoney(frInfo.eurPrice) : null);
       if (current.catalogId === id) recalc();
@@ -2919,6 +2979,61 @@
         el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
       }
     } catch (e) { console.error('tryImageFallback failed for', id, e); }
+  }
+
+  // Second-chance fallback for non-blocked brands: if the Apify scrape came back without a
+  // price on one or both sides, try the same Google/Serper lookup manual-mode brands use
+  // before giving up and leaving it for the user to type in. needUk/needFr control which
+  // side(s) actually get looked up — never both unconditionally, and never the side that
+  // already has a price. Deliberately doesn't touch the image (unlike trySerperFill) — a
+  // missing image is already handled separately by tryImageFallback, and re-running an image
+  // search here could overwrite a perfectly good scraped og:image with a lower-res thumbnail.
+  async function trySerperPriceFallback(id, ukUrl, frUrl, brandLabel, needUk, needFr) {
+    const token = serperTokenInput.value.trim();
+    if (!token || (!needUk && !needFr)) return;
+    let nameApplied = false;
+
+    function applyName(title) {
+      // Unlike trySerperFill (manual-mode only, where a name is either absent or just a weak
+      // URL-slug guess), a scraped brand's name can already be a good og:title — only fill in
+      // what's actually missing, never overwrite a real scrape result or something the user typed.
+      if (!title || nameApplied || current.catalogId !== id) return;
+      if (current.nameSource === 'user' || current.nameSource === 'scrape') return;
+      el('prodName').value = cleanTitle(title, brandLabel);
+      current.nameSource = 'serper';
+      nameApplied = true;
+    }
+    function applyPrice(fieldId, value) {
+      if (value == null || current.catalogId !== id || el(fieldId).value) return;
+      el(fieldId).value = value;
+    }
+
+    try {
+      if (needUk) {
+        const ukInfo = await serperLookup(ukUrl, token, new URL(ukUrl).hostname).catch(err => { console.error('serperLookup (UK)', id, err); return null; });
+        applyName(ukInfo && ukInfo.title);
+        applyPrice('ukPrice', ukInfo ? parseMoney(ukInfo.gbpPrice) : null);
+        if (current.catalogId === id) recalc();
+      }
+      if (needFr) {
+        const frInfo = await serperLookup(frUrl, token, new URL(frUrl).hostname).catch(err => { console.error('serperLookup (FR)', id, err); return null; });
+        applyName(frInfo && frInfo.title);
+        applyPrice('frPrice', frInfo ? parseMoney(frInfo.eurPrice) : null);
+        if (current.catalogId === id) recalc();
+      }
+      if (current.catalogId === id) {
+        // The scrape's "couldn't confirm the price automatically" note is now stale — refresh
+        // it to reflect whichever field(s), if any, are still actually missing once this
+        // fallback has had its shot, rather than leaving the pre-fallback wording in place
+        // (which would still say "enter manually" even for a side this just resolved).
+        const stillNeedUk = !el('ukPrice').value, stillNeedFr = !el('frPrice').value;
+        el('footnote').textContent = (!stillNeedUk && !stillNeedFr) ? '' :
+          ('Couldn’t find the price on ' +
+            [stillNeedUk && 'the UK listing', stillNeedFr && 'the FR listing'].filter(Boolean).join(' and ') +
+            ' — enter it manually below.');
+        updateCatalogEntry(id, buildCatalogPatch());
+      }
+    } catch (e) { console.error('trySerperPriceFallback failed for', id, e); }
   }
 
   // Some brands' sites block automated scraping outright (bot protection) — for those,
@@ -3031,18 +3146,24 @@
         url_uk: ukUrl, url_fr: frUrl,
         image_url: imageUrl, eu_retail: frPrice, uk_retail: ukPrice
       };
+      // Scrape-first, Google/Serper-second, manual entry only as the last resort — same
+      // fallback manual-mode brands already get, now triggered for any brand whenever the
+      // scrape didn't come back with a price on one or both sides.
+      const needUk = ukPrice == null, needFr = frPrice == null;
       if (existing) {
         current.catalogId = existing.id;
         el('quantityInput').value = existing.quantity != null ? existing.quantity : 1;
         await updateCatalogEntry(existing.id, fields);
         recalc();
         if (!imageUrl) tryImageFallback(existing.id, ukUrl, frUrl);
+        if (needUk || needFr) trySerperPriceFallback(existing.id, ukUrl, frUrl, brandLabel, needUk, needFr);
       } else {
         const row = await addCatalogEntry(fields);
         if (row) {
           current.catalogId = row.id;
           recalc();
           if (!imageUrl) tryImageFallback(row.id, ukUrl, frUrl);
+          if (needUk || needFr) trySerperPriceFallback(row.id, ukUrl, frUrl, brandLabel, needUk, needFr);
         } else {
           setStatus('Couldn’t save to the catalog — check your Supabase settings.', true);
         }
@@ -3069,7 +3190,14 @@
     const brand = BRANDS[brandKey];
     const { uk, fr } = brand.build(raw);
     if (uk === fr) {
-      setStatus('Could not work out the FR/UK pair from this link — try pasting both manually below.', true);
+      setStatus('Could not work out the FR/UK pair from this link — paste the other one below.', true);
+      // Pre-fill whichever side we could confidently identify (see hermes/loropiana's
+      // detectLocale) rather than making the user re-paste the link they already gave us.
+      const locale = brand.detectLocale && brand.detectLocale(raw);
+      if (locale) {
+        manualUk.value = locale === 'uk' ? raw : '';
+        manualFr.value = locale === 'fr' ? raw : '';
+      }
       manualPanel.classList.add('open');
       return;
     }

@@ -5,9 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 KICKBROS Product Search is a single-file client-side tool for a designer resale/arbitrage
-business. You paste a product link (Dior, Louis Vuitton, Gucci, Moncler, Balenciaga, Goyard),
-and it finds the matching FR and UK listings, gets both prices, and works out what to charge
-after the French détaxe (tax) refund — cost, sale price, reseller price, and profit.
+business. You paste a product link (Dior, Louis Vuitton, Gucci, Moncler, Balenciaga, Goyard,
+Hermès, Prada, Loro Piana), and it finds the matching FR and UK listings, gets both prices, and
+works out what to charge after the French détaxe (tax) refund — cost, sale price, reseller
+price, and profit.
 
 The entire app is `index.html` — no build step, no dependencies, no package.json. It's a static
 page with inline `<style>` and one `<script>` IIFE, deployed as-is.
@@ -54,19 +55,57 @@ happened to click some other tab first, incidentally setting the attribute as a 
 `BRANDS` (top of the script) maps each domain to a `build(url)` function that derives the
 matching UK/FR URL from whichever one the user pasted, plus a `scrapeBlocked` flag.
 
-- **Non-blocked brands** (Gucci, Moncler, Balenciaga, Goyard) → `runCheck` → `extractInfo` →
+- **Non-blocked brands** (Gucci, Moncler, Balenciaga, Goyard, Hermès) → `runCheck` → `extractInfo` →
   `runApifyScrape`, which POSTs a `pageFunction` to Apify's `web-scraper` actor (user's own
   token) to run a real headless browser against both URLs. **`pageFunctionSource()` is
   serialized via `.toString()` and executed remotely inside Apify's sandbox** — it has no access
   to anything in the outer script's closure and must stay fully self-contained (its own regexes,
   no shared helpers).
-- **Blocked brands** (Dior, Louis Vuitton) → `showManualMode`. Direct scraping was tested and
-  confirmed blocked at the network level for both — Apify with a residential proxy, a plain
-  fetch with browser headers, and a third-party metadata API (microlink.io) all got 403s. These
-  skip the scrape attempt entirely and instead: (a) build both links instantly so the user can
-  open them, (b) let the user type name/price directly into always-editable fields, and (c) if a
-  Serper API token is set, best-effort auto-suggest name/image/price via `trySerperFill` /
-  `tryImageFallback`.
+- **Blocked brands** (Dior, Louis Vuitton, Prada, Loro Piana) → `showManualMode`. Direct
+  scraping was tested and confirmed blocked at the network level for Dior/LV — Apify with a
+  residential proxy, a plain fetch with browser headers, and a third-party metadata API
+  (microlink.io) all got 403s. Prada and Loro Piana were added later on different evidence per
+  brand (see below) — Loro Piana the same way (plain fetch 403s outright), Prada on a subtler
+  signal: a plain fetch/curl gets the real page fine, but a real headless browser hangs or
+  errors on every attempt, consistent with anti-automation blocking that specifically targets
+  headless-browser fingerprints (which is what Apify's actor looks like to the site) rather than
+  raw HTTP requests — **unconfirmed against a real Apify run, flip `scrapeBlocked` off for Prada
+  if a live scrape actually succeeds.** Blocked brands skip the scrape attempt entirely and
+  instead: (a) build both links instantly so the user can open them, (b) let the user type
+  name/price directly into always-editable fields, and (c) if a Serper API token is set,
+  best-effort auto-suggest name/image/price via `trySerperFill` / `tryImageFallback`.
+- **Scrape-first-then-Serper, for every brand**: even a non-blocked brand's Apify scrape can
+  come back without a price on one or both sides (bot-protection hit at runtime, page layout
+  changed, etc). `runCheck` now always follows up with `trySerperPriceFallback` for whichever
+  side(s) are still missing a price after the scrape — same Serper lookup manual-mode brands
+  use, just price/name-only (never touches the image; a missing image is `tryImageFallback`'s
+  job, and re-running an image search here could stomp a perfectly good scraped `og:image`).
+  Manual-entry is the last resort now, not the first response to an incomplete scrape.
+
+### Not every brand's UK/FR link pair can be derived from one link
+
+Most `build(url)` functions are a simple locale-segment swap (see Gucci/Moncler/Balenciaga/
+Goyard), sometimes with a locale-specific word fixed up explicitly (LV's `/produits/` vs
+`/products/`). Two brands can't do this at all:
+
+- **Hermès**: the descriptive URL slug is independently translated per product (e.g.
+  `sandales-oran` vs `oran-sandal`) with no shared pattern, and — unlike Prada, which
+  canonicalises on its trailing product code and tolerates a mismatched slug — Hermès 403s a
+  locale-swapped URL that keeps the wrong locale's slug words (confirmed live), and 403s a
+  slug-less/code-only URL too. There's no way to derive one locale's link from the other.
+- **Loro Piana**: locale is a subdomain (`fr.`/`uk.`), and the two locales use *different*
+  trailing product codes for what the site presents as the same item, not just different slug
+  words — confirmed directly from real example links (`FAO4831_M15K` vs `FAR0854_B5VY`).
+
+For these, `build(url)` deliberately returns an identical `{ uk, fr }` pair. `startCheckFromUrl`
+already had a generic fallback for exactly this ("couldn't work out the FR/UK pair — paste both
+manually below", reusing the `manualPanel`/`manualUk`/`manualFr` inputs) — rather than build
+bespoke UI, these two brands just trigger it. The one enhancement: an optional
+`detectLocale(url)` on the brand config lets `startCheckFromUrl` pre-fill whichever manual field
+matches the locale actually pasted, instead of making the user re-type the link they already
+gave. Hermès still scrapes normally via `runCheck` once both links are supplied this way — only
+the *pairing* is manual, not the price lookup; Loro Piana is manual end-to-end since it's also
+`scrapeBlocked`.
 
 ### Serper calls must run strictly sequentially, never concurrently
 

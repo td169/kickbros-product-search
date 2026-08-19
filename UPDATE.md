@@ -6,6 +6,33 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-08-19 — Three new brands, better auto-fill, missing-FR-price fix
+
+### New brands: Hermès, Prada, Loro Piana
+
+All three now work the same way as the existing brands — paste one link, get both. Hermès
+scrapes live like Gucci/Moncler. Prada and Loro Piana go through the same guided manual-entry
+flow as Dior/Louis Vuitton (open both listings, type what you see) since their sites block
+automated checks. For Hermès and Loro Piana specifically, the app can't always work out the
+second listing's link on its own — when that happens it now asks you to paste just the missing
+one, with whichever link you already gave pre-filled rather than asking for both again.
+
+### Fix: FR price sometimes came back empty on manual-entry brands
+
+The Google-assisted auto-fill (used for Dior/LV and the new Prada/Loro Piana) was more likely to
+miss the FR price than the UK price — it wasn't telling Google to search in French, and it
+trusted whatever the top search result was even when that result was the wrong page entirely.
+Both fixed.
+
+### Every brand now gets a second chance before asking you to type
+
+If a live scrape (Gucci, Moncler, Balenciaga, Goyard, Hermès) comes back without a price on one
+or both sides, the app now automatically tries the same Google-assisted lookup the manual-entry
+brands use before giving up — typing something in by hand is the last resort now, not the first
+response to an incomplete scrape.
+
+---
+
 ## 2026-08-19 — "Plan next trip" launched, plus navigation and polish fixes
 
 ### New: Plan next trip
