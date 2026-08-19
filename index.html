@@ -1272,7 +1272,10 @@
       // out the FR/UK pair — paste both manually" fallback kick in instead of shipping a
       // broken link.
       build: (url) => ({ uk: url, fr: url }),
-      detectLocale: (url) => /\/fr\/fr\//i.test(url) ? 'fr' : (/\/uk\/en\//i.test(url) ? 'uk' : null)
+      // Used both to pre-fill the manual-paste panel with whichever side was actually pasted,
+      // and to recognise the *other* locale's link inside a Google search result when trying
+      // to auto-find it (see findOtherLocaleLink) before falling back to asking the user.
+      localePatterns: { fr: /\/fr\/fr\//i, uk: /\/uk\/en\//i }
     },
     prada: { name:'Prada', test: h => h.includes('prada.com'), scrapeBlocked:true,
       // Path-swap pattern works reliably: Prada's URL separates the descriptive slug from the
@@ -1302,7 +1305,7 @@
       // pair makes startCheckFromUrl's existing "couldn't work out the FR/UK pair — paste both
       // manually" fallback kick in, reusing that flow instead of building bespoke UI for this.
       build: (url) => ({ uk: url, fr: url }),
-      detectLocale: (url) => /^https?:\/\/fr\./i.test(url) ? 'fr' : (/^https?:\/\/uk\./i.test(url) ? 'uk' : null)
+      localePatterns: { fr: /^https?:\/\/fr\./i, uk: /^https?:\/\/uk\./i }
     }
   };
 
@@ -2868,6 +2871,34 @@
     };
   }
 
+  // Used when build() can't derive the second locale's link at all (Hermès, Loro Piana — see
+  // their localePatterns). Rather than only asking the user to go find and paste the missing
+  // link, first try the same Google/Serper method the rest of the app already relies on: search
+  // for the pasted link, then look through the results — organic first, falling back to
+  // Shopping/sponsored listings if no organic result matches — for one on the same site whose
+  // URL matches the *other* locale's pattern. Just returns the URL, not price/name — once both
+  // real links exist, showManualMode/runCheck's own existing Serper fallbacks (trySerperFill /
+  // trySerperPriceFallback) already look those up properly, so re-deriving them here too would
+  // just be duplicate work.
+  async function findOtherLocaleLink(pastedUrl, token, brand, otherLocale) {
+    const pattern = brand.localePatterns && brand.localePatterns[otherLocale];
+    if (!pattern) return null;
+    const isFr = otherLocale === 'fr';
+    const res = await fetch('https://google.serper.dev/search', {
+      method: 'POST',
+      headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: pastedUrl, num: 10, gl: isFr ? 'fr' : 'gb', hl: isFr ? 'fr' : 'en' })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const pools = [...((data && data.organic) || []), ...((data && data.shopping) || [])];
+    const match = pools.find(r => {
+      if (!r.link || !pattern.test(r.link)) return false;
+      try { return brand.test(new URL(r.link).hostname); } catch (e) { return false; }
+    });
+    return match ? match.link : null;
+  }
+
   // Searches Google Images for the exact product URL (not the product name) — confirmed
   // against live data that this reliably returns the exact listing photo, whereas a
   // name-text search can match a different colourway/variant of the same model.
@@ -3175,9 +3206,16 @@
     }
   }
 
+  function detectLocale(brand, url) {
+    if (!brand.localePatterns) return null;
+    if (brand.localePatterns.fr.test(url)) return 'fr';
+    if (brand.localePatterns.uk.test(url)) return 'uk';
+    return null;
+  }
+
   // Shared by the main dock's checkBtn and the trip-detail "paste a link" dock — both just feed
   // a raw URL string in and let brand detection/scraping take it from there.
-  function startCheckFromUrl(raw) {
+  async function startCheckFromUrl(raw) {
     if (!raw) return;
     let url;
     try { url = new URL(raw); } catch(e) { setStatus('Not a valid URL.', true); return; }
@@ -3190,10 +3228,27 @@
     const brand = BRANDS[brandKey];
     const { uk, fr } = brand.build(raw);
     if (uk === fr) {
+      // build() couldn't derive the pair (Hermès, Loro Piana) — before asking the user to go
+      // find and paste the missing link themselves, try to find it the same way the rest of
+      // the app already does: search Google via Serper for the pasted link and look for the
+      // other locale among the results.
+      const locale = detectLocale(brand, raw);
+      const otherLocale = locale === 'fr' ? 'uk' : (locale === 'uk' ? 'fr' : null);
+      const token = serperTokenInput.value.trim();
+      if (otherLocale && token) {
+        setStatus('Looking up the other listing…');
+        const found = await findOtherLocaleLink(raw, token, brand, otherLocale).catch(err => { console.error('findOtherLocaleLink', err); return null; });
+        if (found) {
+          const ukUrl = otherLocale === 'uk' ? found : raw;
+          const frUrl = otherLocale === 'fr' ? found : raw;
+          if (brand.scrapeBlocked) showManualMode(ukUrl, frUrl, brand.name, brandKey, null);
+          else runCheck(ukUrl, frUrl, brand.name);
+          return;
+        }
+      }
       setStatus('Could not work out the FR/UK pair from this link — paste the other one below.', true);
-      // Pre-fill whichever side we could confidently identify (see hermes/loropiana's
-      // detectLocale) rather than making the user re-paste the link they already gave us.
-      const locale = brand.detectLocale && brand.detectLocale(raw);
+      // Pre-fill whichever side we could confidently identify rather than making the user
+      // re-paste the link they already gave us.
       if (locale) {
         manualUk.value = locale === 'uk' ? raw : '';
         manualFr.value = locale === 'fr' ? raw : '';

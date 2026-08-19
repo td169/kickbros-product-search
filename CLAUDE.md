@@ -100,12 +100,21 @@ Goyard), sometimes with a locale-specific word fixed up explicitly (LV's `/produ
 For these, `build(url)` deliberately returns an identical `{ uk, fr }` pair. `startCheckFromUrl`
 already had a generic fallback for exactly this ("couldn't work out the FR/UK pair — paste both
 manually below", reusing the `manualPanel`/`manualUk`/`manualFr` inputs) — rather than build
-bespoke UI, these two brands just trigger it. The one enhancement: an optional
-`detectLocale(url)` on the brand config lets `startCheckFromUrl` pre-fill whichever manual field
-matches the locale actually pasted, instead of making the user re-type the link they already
-gave. Hermès still scrapes normally via `runCheck` once both links are supplied this way — only
-the *pairing* is manual, not the price lookup; Loro Piana is manual end-to-end since it's also
-`scrapeBlocked`.
+bespoke UI, these two brands just trigger it, but only as a last resort now:
+
+- First, `startCheckFromUrl` tries `findOtherLocaleLink` — the same Google/Serper method used
+  everywhere else in the app, searching for the pasted URL and looking through the results
+  (organic first, then Shopping/sponsored listings) for one on the same site matching the
+  *other* locale's `localePatterns` entry. If found, the pair is complete and it proceeds
+  straight into `runCheck`/`showManualMode` — no user input needed at all.
+- Only if that comes back empty (no Serper token set, or genuinely no matching result) does it
+  fall back to prompting the user, pre-filling whichever manual field matches the locale
+  actually pasted (via `detectLocale`, built from the same `localePatterns`) rather than making
+  them re-type the link they already gave.
+
+Hermès still scrapes normally via `runCheck` once both links exist (found automatically or
+typed in) — only the *pairing* was ever the problem, not the price lookup. Loro Piana is manual
+end-to-end either way since it's also `scrapeBlocked`.
 
 ### Serper calls must run strictly sequentially, never concurrently
 

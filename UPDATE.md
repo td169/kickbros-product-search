@@ -14,8 +14,10 @@ All three now work the same way as the existing brands — paste one link, get b
 scrapes live like Gucci/Moncler. Prada and Loro Piana go through the same guided manual-entry
 flow as Dior/Louis Vuitton (open both listings, type what you see) since their sites block
 automated checks. For Hermès and Loro Piana specifically, the app can't always work out the
-second listing's link on its own — when that happens it now asks you to paste just the missing
-one, with whichever link you already gave pre-filled rather than asking for both again.
+second listing's link on its own from the URL alone — when that happens it now first tries to
+find it via the same Google search the app already uses elsewhere (checking both the normal and
+sponsored results), and only asks you to paste the missing link yourself — pre-filling whichever
+one you already gave — if that comes up empty.
 
 ### Fix: FR price sometimes came back empty on manual-entry brands
 
