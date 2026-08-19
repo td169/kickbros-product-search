@@ -107,7 +107,13 @@ async def main_async(args):
         if err:
             log(f"FAILED: {err}")
             return
-        log(f"MATCHED: {json.dumps(result, indent=2, ensure_ascii=False)[:2000]}")
+        url, photo = extract_url_and_image(result)
+        log(f"MATCHED displayName={result.get('displayName')}")
+        log(f"  pageName/url={url}")
+        log(f"  photo={photo}")
+        log(f"  location={result.get('location', {}).get('displayLocation')}")
+        log(f"  keys={list(result.keys())}")
+        log(f"  basicPropertyData keys={list(result.get('basicPropertyData', {}).keys())}")
         return
 
     rows = []
