@@ -288,6 +288,9 @@
   body.hide-sensitive #discountVal,
   body.hide-sensitive #totalProfitVal,
   body.hide-sensitive #totalSpendVal,
+  body.hide-sensitive #pmSale,
+  body.hide-sensitive #pmResellerVal,
+  body.hide-sensitive #pmProfitVal,
   body.hide-sensitive .catalog-sale,
   body.hide-sensitive .catalog-profit,
   body.hide-sensitive .trip-figure{
@@ -532,17 +535,17 @@
   }
   .status-pill[data-status="stock"]{background:var(--surface);color:var(--muted);}
   .status-pill[data-status="sold"]{background:var(--profit-bg);color:var(--profit);}
-  .status-pill[data-status="missed_sale"]{background:rgba(225,25,0,.12);color:var(--danger);}
 
   .status-row{display:flex;align-items:center;gap:8px;padding:6px 0 2px;}
   .status-row-label{font-size:10.5px;color:var(--muted-2);}
-  body.dock-open.result-active .status-row{display:none;}
+  /* Scoped to #card specifically — the product-detail modal reuses .status-row/.status-pill
+     for visual consistency and must stay visible regardless of the Prices-tab card's own
+     dock/result state, which is otherwise unrelated to it. */
+  body.dock-open.result-active #card .status-row{display:none;}
 
-  /* Only shown when the card was reopened from the Catalog list — see cardReturnTo === 'catalog'
-     in renderCard(). Right-aligned as the card's last row rather than absolutely positioned, so
-     it never overlaps the footnote/status rows above it regardless of card height. */
-  .card-delete-row{display:none;justify-content:flex-end;padding:8px 0 2px;}
-  .card-delete-row.show{display:flex;}
+  /* Delete-product button — lives in the product-detail modal (Catalog/Trips) now, not on the
+     Prices-tab card (that only ever shows a fresh check, which has nothing to delete yet). */
+  .modal-delete-row{display:flex;justify-content:flex-end;padding:8px 0 2px;}
   .btn-delete-catalog{
     background:none;border:1px solid var(--danger);color:var(--danger);
     padding:7px 14px;border-radius:var(--radius-pill);
@@ -648,6 +651,12 @@
     z-index:40;align-items:flex-end;justify-content:center;
   }
   .modal-overlay.open{display:flex;}
+  /* These can now open on top of an already-open modal (product-detail's client-link picker
+     and delete-confirm; the client picker's own "+ Add new client" shortcut) — same z-index +
+     DOM order alone would let the wrong one win depending purely on markup order, so nested
+     ones get bumped explicitly rather than relying on that. */
+  #clientPickerOverlay, #deleteConfirmOverlay{z-index:41;}
+  #newClientOverlay{z-index:42;}
   .modal{
     width:100%;max-width:460px;max-height:85vh;overflow-y:auto;
     background:var(--card-bg);border-radius:var(--radius-lg) var(--radius-lg) 0 0;
@@ -698,6 +707,109 @@
     cursor:pointer;transition:background .15s;
   }
   .btn-add-trip:hover{background:var(--ink-hover);}
+
+  /* clients */
+  .vip-star{color:#D4AF37;font-size:12px;margin-left:5px;vertical-align:middle;}
+  .quiet-tag{
+    font-size:9.5px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;
+    color:var(--danger);background:rgba(225,25,0,.1);
+    padding:2px 7px;border-radius:var(--radius-pill);margin-left:6px;vertical-align:middle;
+  }
+  .client-status-tag{
+    font-size:10.5px;font-weight:600;color:var(--muted);background:var(--surface);
+    padding:2px 8px;border-radius:var(--radius-pill);text-transform:capitalize;flex:none;
+  }
+  .client-filter-row{display:flex;gap:6px;margin:-2px 0 10px;flex-wrap:wrap;}
+  .client-filter-row button{
+    font:inherit;font-size:12px;font-weight:600;background:var(--surface);border:none;
+    color:var(--muted);padding:6px 12px;border-radius:var(--radius-pill);cursor:pointer;
+  }
+  .client-filter-row button.active{background:var(--ink);color:var(--on-ink);}
+
+  /* client profile */
+  .client-header{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+  .client-header-avatar{
+    width:56px;height:56px;border-radius:50%;flex:none;background:var(--surface);
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;color:var(--muted);
+  }
+  .client-header-info h1{margin:0 0 3px;font-size:20px;}
+  .client-contact-row{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+  .btn-whatsapp{
+    display:flex;align-items:center;gap:6px;height:38px;padding:0 16px;border:none;border-radius:var(--radius-pill);
+    background:#25D366;color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;
+  }
+  .client-contact-info{font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:14px;}
+  .client-toggle-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
+  .client-toggle-row select{
+    font:inherit;font-size:13.5px;padding:8px 10px;border-radius:var(--radius-sm);border:none;
+    background:var(--surface);color:var(--ink);
+  }
+  .vip-toggle-btn{
+    font:inherit;font-size:12.5px;font-weight:600;padding:8px 14px;border:none;border-radius:var(--radius-pill);
+    background:var(--surface);color:var(--muted);cursor:pointer;
+  }
+  .vip-toggle-btn.on{background:var(--luxury-bg);color:var(--luxury);}
+  .client-notes{
+    width:100%;min-height:70px;font-family:inherit;font-size:13.5px;padding:10px 12px;
+    border:none;border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);resize:vertical;
+  }
+  .client-referral-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);flex-wrap:wrap;}
+  .client-referral-row button{
+    font:inherit;font-size:12px;font-weight:600;background:var(--surface);border:none;
+    color:var(--ink);padding:5px 12px;border-radius:var(--radius-pill);cursor:pointer;
+  }
+  .referral-link-btn{background:none;border:none;color:var(--ink);font:inherit;font-weight:600;text-decoration:underline;cursor:pointer;padding:0;}
+  .referred-list{font-size:12.5px;color:var(--muted);margin-top:4px;}
+  .totals-row{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12.5px;color:var(--muted);padding:4px 2px 12px;}
+  .totals-row b{color:var(--ink);font-weight:700;}
+  .request-item{
+    display:flex;flex-direction:column;gap:4px;padding:10px 2px;border-bottom:1px solid var(--line);
+  }
+  .request-item:last-child{border-bottom:none;}
+  .request-item-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .request-item-title{font-weight:600;font-size:14px;}
+  .request-item-sub{font-size:12px;color:var(--muted);}
+  .deposit-pill{
+    font-family:inherit;font-size:10.5px;font-weight:700;padding:4px 9px;border:none;
+    border-radius:var(--radius-pill);cursor:pointer;text-transform:capitalize;flex:none;
+  }
+  .deposit-pill[data-deposit="unpaid"]{background:var(--surface);color:var(--muted);}
+  .deposit-pill[data-deposit="deposit_paid"]{background:rgba(212,175,55,.16);color:var(--luxury);}
+  .deposit-pill[data-deposit="paid_in_full"]{background:var(--profit-bg);color:var(--profit);}
+  .request-item-actions{display:flex;gap:8px;}
+  .request-item-actions button{
+    font:inherit;font-size:11.5px;font-weight:600;background:var(--surface);border:none;
+    color:var(--ink);padding:5px 10px;border-radius:var(--radius-pill);cursor:pointer;
+  }
+
+  /* stats popup (jsonb key/value editor) */
+  .stats-row{display:flex;gap:8px;margin-bottom:8px;align-items:center;}
+  .stats-row input{
+    flex:1;min-width:0;font:inherit;font-size:13.5px;padding:8px 10px;border:none;
+    border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);
+  }
+  .stats-row button{
+    flex:none;width:30px;height:30px;border:none;border-radius:50%;background:var(--surface);
+    color:var(--danger);font-size:16px;cursor:pointer;
+  }
+
+  /* product-detail modal (Catalog/Trips only) — reuses .ledger/.status-row/.stub etc from the
+     Prices-tab card for visual consistency without duplicating those rules. */
+  .pm-top{display:flex;gap:10px;margin-bottom:8px;}
+  .pm-client-row{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:10px 0;border-top:1px solid var(--line);margin-top:6px;
+  }
+  .pm-client-chip{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;}
+  .pm-client-chip button{
+    font:inherit;font-size:11.5px;font-weight:600;background:var(--surface);border:none;
+    color:var(--muted);padding:4px 10px;border-radius:var(--radius-pill);cursor:pointer;
+  }
+  .btn-link-client{
+    height:38px;padding:0 16px;border:none;border-radius:var(--radius-pill);
+    background:var(--surface);color:var(--ink);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;
+  }
+  .pm-trip-row{display:none;font-size:12px;color:var(--muted);padding:6px 0 0;}
 
   /* plan next trip */
   .plan-trip-btn{width:100%;margin-bottom:14px;}
@@ -945,9 +1057,6 @@
       <div class="trip-add-row" id="tripAddRow">
         <button type="button" class="btn-add-trip" id="addToTripBtn">Add to trip →</button>
       </div>
-      <div class="card-delete-row" id="cardDeleteRow">
-        <button type="button" class="btn-delete-catalog" id="deleteCatalogBtn">Delete product</button>
-      </div>
     </div>
   </main>
 
@@ -964,6 +1073,248 @@
     <div class="catalog-list" id="catalogList"></div>
     <p class="empty-state" id="catalogEmpty">Nothing in the catalog yet — checks you run in Prices will show up here.</p>
   </main>
+
+  <main class="view" id="clientsView">
+    <div class="view-header">
+      <h1>Clients</h1>
+      <button type="button" class="text-link" id="exportClientsBtn">Export CSV</button>
+    </div>
+    <input type="text" class="catalog-search" id="clientSearch" placeholder="Search clients…" autocomplete="off">
+    <div class="client-filter-row" id="clientStatusFilterRow">
+      <button type="button" class="active" data-status="">All</button>
+      <button type="button" data-status="active">Active</button>
+      <button type="button" data-status="inactive">Inactive</button>
+      <button type="button" data-status="prospect">Prospect</button>
+    </div>
+    <div class="client-filter-row" id="clientSortRow">
+      <button type="button" class="active" data-sort="name">Sort: Name</button>
+      <button type="button" data-sort="recent">Sort: Last purchase</button>
+    </div>
+    <button type="button" class="btn-pill" id="newClientBtn" style="width:100%;margin-bottom:14px;">+ New client</button>
+    <div class="catalog-list" id="clientList"></div>
+    <p class="empty-state" id="clientsEmpty">No clients yet — add your first one above.</p>
+  </main>
+
+  <main class="view" id="clientDetailView">
+    <div class="view-header">
+      <button class="text-link" id="clientDetailBack">← Clients</button>
+    </div>
+    <div class="client-header">
+      <span class="client-header-avatar" id="clientDetailAvatar">?</span>
+      <div class="client-header-info">
+        <h1 id="clientDetailName">—</h1>
+        <span class="client-status-tag" id="clientDetailStatusTag" data-status="active">Active</span>
+        <span class="quiet-tag" id="clientDetailQuietTag" style="display:none;">Gone quiet</span>
+      </div>
+    </div>
+    <div class="client-contact-row">
+      <a class="btn-whatsapp" id="clientWhatsappBtn" href="#" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.8-.9-2-1s-.5-.2-.7.2-.8 1-.9 1.2-.3.2-.6.1a7.9 7.9 0 0 1-2.3-1.4 8.6 8.6 0 0 1-1.6-2c-.2-.3 0-.5.1-.6l.4-.5.3-.4a.6.6 0 0 0 0-.5c-.1-.2-.7-1.7-1-2.3s-.5-.5-.7-.5h-.6a1.2 1.2 0 0 0-.8.4 3.5 3.5 0 0 0-1.1 2.6c0 1.5 1.1 3 1.3 3.2s2.2 3.4 5.3 4.7a17.9 17.9 0 0 0 1.8.7 4.3 4.3 0 0 0 2 .1c.6-.1 1.8-.7 2-1.5s.3-1.4.2-1.5-.2-.2-.5-.3Z"/><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2Zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8 8 0 1 1 12 20Z"/></svg>
+        WhatsApp
+      </a>
+      <button type="button" class="btn-pill" id="markContactedBtn" style="flex:none;">Mark contacted today</button>
+      <button type="button" class="vip-toggle-btn" id="vipToggleBtn">☆ VIP</button>
+      <button type="button" class="btn-pill" id="openStatsBtn" style="flex:none;">Stats</button>
+    </div>
+    <div class="client-contact-info" id="clientContactInfo"></div>
+    <div class="client-toggle-row">
+      <label style="font-size:12.5px;color:var(--muted);">Status
+        <select id="clientStatusSelect">
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="prospect">Prospect</option>
+        </select>
+      </label>
+      <label style="font-size:12.5px;color:var(--muted);">Birthday
+        <input type="date" id="clientBirthday">
+      </label>
+    </div>
+    <div class="field">
+      <label>Notes</label>
+      <textarea class="client-notes" id="clientNotes" placeholder="Preferences, sizing, anything worth remembering…"></textarea>
+    </div>
+    <div class="field">
+      <label>Referred by</label>
+      <div class="client-referral-row" id="referredByRow"></div>
+    </div>
+    <div id="referredListWrap" style="display:none;margin-bottom:6px;">
+      <label style="font-size:11px;color:var(--muted-2);">Referred by this client</label>
+      <div class="referred-list" id="referredList"></div>
+    </div>
+
+    <h3 style="font-size:12px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);margin:18px 0 8px;">Purchase history</h3>
+    <div class="totals-row" id="clientTotalsRow"></div>
+    <div class="catalog-list" id="clientPurchaseList"></div>
+    <p class="empty-state" id="clientPurchaseEmpty" style="padding:24px 8px;">No purchases linked to this client yet.</p>
+
+    <h3 style="font-size:12px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);margin:18px 0 8px;">Pending requests</h3>
+    <button type="button" class="btn-pill" id="newRequestBtn" style="width:100%;margin-bottom:12px;">+ New request</button>
+    <div id="clientRequestList"></div>
+    <p class="empty-state" id="clientRequestEmpty" style="padding:24px 8px;">No requests for this client yet.</p>
+  </main>
+
+  <div class="modal-overlay" id="newClientOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>New client</h3>
+        <button type="button" class="modal-close" id="newClientClose" aria-label="Close">×</button>
+      </div>
+      <div class="field">
+        <label>Name</label>
+        <input type="text" id="newClientName" placeholder="Full name" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>WhatsApp number</label>
+        <input type="text" id="newClientWhatsapp" placeholder="+44…" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="text" id="newClientEmail" placeholder="name@example.com" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>How they found KICKBROS</label>
+        <select id="newClientSource" style="width:100%;font:inherit;font-size:14px;padding:9px 11px;border:none;border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);">
+          <option value="">—</option>
+          <option value="referral">Referral</option>
+          <option value="tiktok">TikTok</option>
+          <option value="football_contact">Football contact</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <p class="modal-text" id="clientDuplicateWarning" style="display:none;color:var(--danger);"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="newClientCancel">Cancel</button>
+        <button type="button" class="btn-primary" id="newClientCreate">Add client</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="statsOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Stats</h3>
+        <button type="button" class="modal-close" id="statsClose" aria-label="Close">×</button>
+      </div>
+      <div id="statsRows"></div>
+      <button type="button" class="text-link" id="addStatRowBtn">+ Add field</button>
+      <div class="modal-actions">
+        <button type="button" class="btn-primary" id="statsSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="clientPickerOverlay">
+    <div class="modal modal-list">
+      <div class="modal-header">
+        <h3 id="clientPickerTitle">Choose a client</h3>
+        <button type="button" class="modal-close" id="clientPickerClose" aria-label="Close">×</button>
+      </div>
+      <button type="button" class="btn-pill" id="clientPickerAddNewBtn" style="width:100%;margin-bottom:10px;">+ Add new client</button>
+      <input type="text" class="catalog-search" id="clientPickerSearch" placeholder="Search clients…" autocomplete="off">
+      <div class="catalog-list" id="clientPickerList"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="newRequestOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>New request</h3>
+        <button type="button" class="modal-close" id="newRequestClose" aria-label="Close">×</button>
+      </div>
+      <div class="field">
+        <label>Item description</label>
+        <input type="text" id="newRequestDesc" placeholder="e.g. Speedy 25 in black" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Brand</label>
+        <input type="text" id="newRequestBrand" placeholder="e.g. Louis Vuitton" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Budget <span class="hint">£</span></label>
+        <input type="number" id="newRequestBudget" step="0.01" min="0" placeholder="0.00">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="newRequestCancel">Cancel</button>
+        <button type="button" class="btn-primary" id="newRequestCreate">Add request</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="requestLinkOverlay">
+    <div class="modal modal-list">
+      <div class="modal-header">
+        <h3>Link to a catalog product</h3>
+        <button type="button" class="modal-close" id="requestLinkClose" aria-label="Close">×</button>
+      </div>
+      <input type="text" class="catalog-search" id="requestLinkSearch" placeholder="Search catalog…" autocomplete="off">
+      <div class="catalog-list" id="requestLinkList"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="productDetailOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Product</h3>
+        <button type="button" class="modal-close" id="productDetailClose" aria-label="Close">×</button>
+      </div>
+      <div class="pm-top">
+        <div class="card-img-wrap">
+          <img id="pmImg" src="" alt="">
+        </div>
+        <div class="card-title-wrap">
+          <div class="brand-name" id="pmBrand">—</div>
+          <input type="text" class="product-name" id="pmName" placeholder="Product name" autocomplete="off">
+          <div class="links-row">
+            <a class="stub" id="pmFrLink" href="#" target="_blank" rel="noopener">FR listing ↗</a>
+            <a class="stub" id="pmUkLink" href="#" target="_blank" rel="noopener">UK listing ↗</a>
+          </div>
+        </div>
+      </div>
+      <div class="pm-trip-row" id="pmTripRow">Part of trip: <b id="pmTripLabel"></b></div>
+
+      <div class="ledger">
+        <div class="ledger-row">
+          <div class="label">FR price</div>
+          <div class="val"><input type="number" id="pmFrPrice" step="0.01">&nbsp;€</div>
+        </div>
+        <div class="ledger-row">
+          <div class="label">UK price</div>
+          <div class="val"><input type="number" id="pmUkPrice" step="0.01">&nbsp;£</div>
+        </div>
+        <div class="ledger-row hero">
+          <div class="label">Cost after refund</div>
+          <div class="val" id="pmCostVal">—</div>
+        </div>
+        <div class="ledger-row hero">
+          <div class="label">Sale price</div>
+          <div class="val"><input type="number" id="pmSale" step="0.01">&nbsp;£</div>
+        </div>
+        <div class="ledger-row">
+          <div class="label">Reseller / B2B price</div>
+          <div class="val" id="pmResellerVal">—</div>
+        </div>
+        <div class="ledger-row">
+          <div class="label">Quantity</div>
+          <div class="val"><input type="number" id="pmQuantity" min="1" step="1" value="1"></div>
+        </div>
+        <div class="ledger-row profit">
+          <div class="label">Profit</div>
+          <div class="val" id="pmProfitVal">—</div>
+        </div>
+      </div>
+
+      <div class="status-row">
+        <span class="status-row-label">Status</span>
+        <button type="button" class="status-pill" id="pmStatusBtn" data-status="stock">Stock</button>
+      </div>
+
+      <div class="pm-client-row" id="pmClientRow"></div>
+
+      <div class="modal-delete-row">
+        <button type="button" class="btn-delete-catalog" id="pmDeleteBtn">Delete product</button>
+      </div>
+    </div>
+  </div>
 
   <main class="view" id="tripsView">
     <div class="view-header"><h1>Trips</h1><button class="text-link" id="newTripBtn">New trip</button></div>
@@ -1203,6 +1554,10 @@
   <button class="tab-btn" id="tabCatalog" data-tab="catalog">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
     <span>Catalog</span>
+  </button>
+  <button class="tab-btn" id="tabClients" data-tab="clients">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    <span>Clients</span>
   </button>
   <button class="tab-btn" id="tabTrips" data-tab="trips">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -1584,8 +1939,8 @@
   // Shared across every device/browser instead of localStorage's per-browser History — see
   // CLAUDE.md for the schema. `db` is null until both the URL and anon key are set in
   // Settings, so every function here degrades gracefully (empty list / no-op) until then.
-  const STATUS_LABEL = { stock: 'Stock', sold: 'Sold', missed_sale: 'Missed sale' };
-  const STATUS_ORDER = ['stock', 'sold', 'missed_sale'];
+  const STATUS_LABEL = { stock: 'Stock', sold: 'Sold' };
+  const STATUS_ORDER = ['stock', 'sold'];
   function cycleStatus(s) { return STATUS_ORDER[(STATUS_ORDER.indexOf(s) + 1) % STATUS_ORDER.length]; }
   function initials(label) { return (label || '?').slice(0, 2).toUpperCase(); }
 
@@ -1797,49 +2152,7 @@
       return;
     }
     empty.style.display = 'none';
-    list.forEach(entry => wrap.appendChild(buildCatalogRow(entry, e => reopenCatalogEntry(e, 'catalog'))));
-  }
-
-  async function reopenCatalogEntry(entry, returnTo, returnTripLabel) {
-    switchTab('prices');
-    resetCardMode();
-    current.catalogId = null;
-    // Where the "← Back" button on the card should go once shown — set here rather than
-    // inferred, since switchTab('prices') above would otherwise be indistinguishable from a
-    // fresh check started from the main dock (which has nowhere meaningful to "go back" to).
-    cardReturnTo = returnTo || null;
-    cardReturnTripLabel = returnTripLabel || null;
-    // Reopening an existing item is never "adding to a trip" — that context only applies to a
-    // check just started from the trip-detail "paste a link" flow.
-    current.tripLabel = null;
-    current.nameSource = entry.product_name ? 'user' : null;
-    // The schema doesn't track which brands are scrape-blocked (that's app config, not data) —
-    // infer manual-mode styling from whether the stored brand name matches one.
-    const brandCfg = Object.values(BRANDS).find(b => b.name === entry.brand);
-    const manualMode = !!(brandCfg && brandCfg.scrapeBlocked);
-    if (manualMode) {
-      card.classList.add('manual-mode');
-      el('frPrice').placeholder = 'tap here';
-      el('ukPrice').placeholder = 'tap here';
-    }
-    // No stored rate on the row (rates move day to day) — fetch a fresh one rather than show
-    // a stale figure from whenever this was first checked.
-    const rate = await fetchRate().catch(() => null);
-    renderCard(
-      entry.brand, entry.product_name, entry.image_url || null, entry.url_uk, entry.url_fr,
-      entry.uk_retail, entry.eu_retail, rate
-    );
-    el('quantityInput').value = entry.quantity != null ? entry.quantity : 1;
-    renderStatusPill(el('statusBtn'), entry.status || 'stock');
-    current.catalogId = entry.id;
-    // Treat the stored sale_price as a locked-in override, not a fresh suggestion — reopening
-    // an entry (e.g. to fix its FR/UK RRP) shouldn't silently move a price that was already
-    // finalised, especially a trip's actual recorded sale price.
-    if (entry.sale_price != null) {
-      el('saleVal').value = entry.sale_price;
-      saleOverridden = true;
-    }
-    recalc();
+    list.forEach(entry => wrap.appendChild(buildCatalogRow(entry, e => openProductDetail(e))));
   }
 
   el('catalogSearch').addEventListener('input', applyCatalogFilters);
@@ -2155,8 +2468,7 @@
     wrap.innerHTML = '';
     if (!items.length) { empty.style.display = 'block'; return; }
     empty.style.display = 'none';
-    const label = currentTripDetailLabel;
-    items.forEach(entry => wrap.appendChild(buildCatalogRow(entry, e => reopenCatalogEntry(e, 'tripDetail', label))));
+    items.forEach(entry => wrap.appendChild(buildCatalogRow(entry, e => openProductDetail(e))));
   }
 
   el('tripDetailBack').addEventListener('click', () => switchTab('trips'));
@@ -2618,13 +2930,864 @@
     return years + (years === 1 ? ' year ago' : ' years ago');
   }
 
+  // ---- product detail modal (Catalog / Trip Detail / a client's purchase history) ----
+  // Tapping an existing product used to route back into the Prices-tab card — that card is only
+  // ever a live, in-progress check now (a brand-new product has no client context yet, so it has
+  // no business showing client-linking UI). Viewing or editing something already saved, and the
+  // optional client link, live here instead.
+  let productModalEntry = null;
+  let productModalRate = null;
+  let productModalComputed = null;
+  let productModalSyncTimer = null;
+
+  function buildPmPatch() {
+    const frPrice = parseFloat(el('pmFrPrice').value);
+    const ukPrice = parseFloat(el('pmUkPrice').value);
+    const qty = parseInt(el('pmQuantity').value, 10) || 1;
+    const patch = {
+      product_name: el('pmName').value.trim() || null,
+      eu_retail: isNaN(frPrice) ? null : frPrice,
+      uk_retail: isNaN(ukPrice) ? null : ukPrice,
+      quantity: qty
+    };
+    if (productModalComputed) {
+      patch.eu_after_tax = productModalComputed.costEUR;
+      patch.uk_after_tax = productModalComputed.costGBP;
+      patch.sale_price = productModalComputed.salePrice;
+      patch.profit = productModalComputed.profitSale;
+      patch.reseller_price = productModalComputed.resellerPrice;
+      patch.total_profit = productModalComputed.totalProfit;
+      patch.total_spend = productModalComputed.totalSpend;
+    } else {
+      const salePrice = parseFloat(el('pmSale').value);
+      patch.sale_price = isNaN(salePrice) ? null : salePrice;
+    }
+    return patch;
+  }
+
+  function scheduleProductModalSync() {
+    if (!productModalEntry) return;
+    clearTimeout(productModalSyncTimer);
+    productModalSyncTimer = setTimeout(() => {
+      if (!productModalEntry) return;
+      const patch = buildPmPatch();
+      const id = productModalEntry.id;
+      updateCatalogEntry(id, patch);
+      Object.assign(productModalEntry, patch);
+      const cached = catalogRows.find(r => r.id === id);
+      if (cached) Object.assign(cached, patch);
+    }, 500);
+  }
+
+  // Mirrors recalc() on the Prices-tab card (same détaxe/margin/cap/reseller rules), but scoped
+  // to the modal's own fields and without the "auto-fill the sale price until the user overrides
+  // it" behaviour — this is always an already-priced existing item, not a fresh suggestion.
+  function recalcProductModal() {
+    const frPrice = parseFloat(el('pmFrPrice').value);
+    const ukPrice = parseFloat(el('pmUkPrice').value);
+    const qty = parseInt(el('pmQuantity').value, 10) || 1;
+    const rate = productModalRate;
+
+    if (isNaN(frPrice) || !rate) {
+      el('pmCostVal').textContent = '—';
+      el('pmResellerVal').textContent = '—';
+      el('pmProfitVal').textContent = '—';
+      productModalComputed = null;
+      scheduleProductModalSync();
+      return;
+    }
+
+    const costEUR = frPrice * (1 - settings.refund/100);
+    const costGBP = costEUR * rate;
+    let suggestedSalePrice = costGBP * (1 + settings.margin/100);
+    if (!isNaN(ukPrice) && ukPrice > 0) {
+      const cap = maxSaveFor(ukPrice);
+      if (cap != null) {
+        const minSalePrice = ukPrice - cap;
+        if (suggestedSalePrice < minSalePrice) suggestedSalePrice = minSalePrice;
+      }
+    }
+    const resellerPrice = suggestedSalePrice * (1 - settings.reseller/100);
+    const typedSale = parseFloat(el('pmSale').value);
+    const salePrice = isNaN(typedSale) ? suggestedSalePrice : typedSale;
+    const profitSale = salePrice - costGBP;
+    const totalProfit = profitSale * qty;
+
+    el('pmCostVal').textContent = fmtGBP(costGBP);
+    el('pmResellerVal').textContent = fmtGBP(resellerPrice);
+    el('pmProfitVal').textContent = fmtGBP(totalProfit);
+
+    productModalComputed = { costEUR, costGBP, salePrice, resellerPrice, profitSale, quantity: qty, totalProfit, totalSpend: costGBP * qty };
+    scheduleProductModalSync();
+  }
+
+  async function openProductDetail(entry) {
+    productModalEntry = entry;
+    productModalComputed = null;
+    el('pmImg').src = entry.image_url || PLACEHOLDER_IMG;
+    el('pmImg').onerror = () => { el('pmImg').src = PLACEHOLDER_IMG; };
+    el('pmBrand').textContent = entry.brand || 'Unbranded';
+    el('pmName').value = entry.product_name || '';
+    el('pmFrLink').href = entry.url_fr || '#';
+    el('pmUkLink').href = entry.url_uk || '#';
+    el('pmFrPrice').value = entry.eu_retail != null ? entry.eu_retail : '';
+    el('pmUkPrice').value = entry.uk_retail != null ? entry.uk_retail : '';
+    el('pmQuantity').value = entry.quantity != null ? entry.quantity : 1;
+    el('pmSale').value = entry.sale_price != null ? entry.sale_price : '';
+    renderStatusPill(el('pmStatusBtn'), entry.status || 'stock');
+    el('pmTripRow').style.display = entry.trip_label ? 'block' : 'none';
+    el('pmTripLabel').textContent = entry.trip_label || '';
+    el('productDetailOverlay').classList.add('open');
+    await ensureClientsCache();
+    renderPmClientRow();
+    productModalRate = await fetchRate().catch(() => null);
+    recalcProductModal();
+  }
+  function closeProductDetail() {
+    // Flush any pending debounced edit immediately rather than discarding it — closing right
+    // after typing (within the 500ms window) would otherwise silently lose that last edit, and
+    // the underlying list (Catalog/Trip Detail/purchase history) needs the fresh values to
+    // avoid showing stale figures once this modal is gone.
+    if (productModalSyncTimer && productModalEntry) {
+      clearTimeout(productModalSyncTimer);
+      const patch = buildPmPatch();
+      const id = productModalEntry.id;
+      updateCatalogEntry(id, patch);
+      Object.assign(productModalEntry, patch);
+      const cached = catalogRows.find(r => r.id === id);
+      if (cached) Object.assign(cached, patch);
+    }
+    el('productDetailOverlay').classList.remove('open');
+    productModalEntry = null;
+    refreshAfterProductChange();
+  }
+  el('productDetailClose').addEventListener('click', closeProductDetail);
+  el('productDetailOverlay').addEventListener('click', e => { if (e.target === el('productDetailOverlay')) closeProductDetail(); });
+  ['pmFrPrice','pmUkPrice','pmSale','pmQuantity'].forEach(id => el(id).addEventListener('input', recalcProductModal));
+  el('pmName').addEventListener('input', scheduleProductModalSync);
+  el('pmStatusBtn').addEventListener('click', async () => {
+    if (!productModalEntry) return;
+    const next = cycleStatus(el('pmStatusBtn').dataset.status || 'stock');
+    renderStatusPill(el('pmStatusBtn'), next);
+    await updateCatalogEntry(productModalEntry.id, { status: next });
+    productModalEntry.status = next;
+    const cached = catalogRows.find(r => r.id === productModalEntry.id);
+    if (cached) cached.status = next;
+    refreshAfterProductChange();
+  });
+  el('pmDeleteBtn').addEventListener('click', () => { if (productModalEntry) confirmDeleteProduct(productModalEntry.id); });
+
+  function renderPmClientRow() {
+    const wrap = el('pmClientRow');
+    wrap.innerHTML = '';
+    if (!productModalEntry) return;
+    if (productModalEntry.client_id) {
+      const client = clientsCache.find(c => c.id === productModalEntry.client_id);
+      const chip = document.createElement('div');
+      chip.className = 'pm-client-chip';
+      chip.appendChild(document.createTextNode('👤 ' + (client ? client.name : 'Linked client')));
+      const changeBtn = document.createElement('button');
+      changeBtn.type = 'button'; changeBtn.textContent = 'Change';
+      changeBtn.addEventListener('click', async () => { await ensureClientsCache(); openClientPicker('productLink'); });
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button'; removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', async () => {
+        await updateCatalogEntry(productModalEntry.id, { client_id: null });
+        productModalEntry.client_id = null;
+        const cached = catalogRows.find(r => r.id === productModalEntry.id);
+        if (cached) cached.client_id = null;
+        renderPmClientRow();
+      });
+      chip.appendChild(changeBtn);
+      chip.appendChild(removeBtn);
+      wrap.appendChild(chip);
+    } else {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn-link-client';
+      btn.textContent = '+ Link to a client';
+      btn.addEventListener('click', async () => { await ensureClientsCache(); openClientPicker('productLink'); });
+      wrap.appendChild(btn);
+    }
+  }
+
+  // ---- clients (Supabase `clients` / `client_requests` tables) ----
+  // See CLAUDE.md for the schema — both tables must be created manually in the Supabase SQL
+  // editor first (the anon key can't run DDL), same as `trips`/`flight_prices`/`hotel_prices`.
+  let clientsCache = [];
+  async function loadClients() {
+    if (!db) return [];
+    const { data, error } = await db.from('clients').select('*').order('name', { ascending: true });
+    if (error) { console.error('loadClients', error); return []; }
+    return data || [];
+  }
+  async function ensureClientsCache() {
+    if (!clientsCache.length && db) clientsCache = await loadClients();
+    return clientsCache;
+  }
+  async function addClient(fields) {
+    if (!db) return null;
+    const { data, error } = await db.from('clients').insert(fields).select().single();
+    if (error) { console.error('addClient', error); return null; }
+    return data;
+  }
+  async function updateClient(id, patch) {
+    if (!db || !id) return;
+    const { error } = await db.from('clients').update(patch).eq('id', id);
+    if (error) console.error('updateClient', error);
+  }
+  async function loadClientProducts(clientId) {
+    if (!db) return [];
+    const { data, error } = await db.from('products').select('*').eq('client_id', clientId).order('created_at', { ascending: false });
+    if (error) { console.error('loadClientProducts', error); return []; }
+    return data || [];
+  }
+  async function loadClientLastPurchaseMap() {
+    if (!db) return {};
+    const { data, error } = await db.from('products').select('client_id, created_at').not('client_id', 'is', null);
+    if (error) { console.error('loadClientLastPurchaseMap', error); return {}; }
+    const map = {};
+    (data || []).forEach(r => {
+      const ts = r.created_at ? new Date(r.created_at).getTime() : 0;
+      if (!map[r.client_id] || ts > map[r.client_id]) map[r.client_id] = ts;
+    });
+    return map;
+  }
+  async function loadClientRequests(clientId) {
+    if (!db) return [];
+    const { data, error } = await db.from('client_requests').select('*').eq('client_id', clientId).order('created_at', { ascending: false });
+    if (error) { console.error('loadClientRequests', error); return []; }
+    return data || [];
+  }
+  async function addClientRequest(fields) {
+    if (!db) return null;
+    const { data, error } = await db.from('client_requests').insert(fields).select().single();
+    if (error) { console.error('addClientRequest', error); return null; }
+    return data;
+  }
+  async function updateClientRequest(id, patch) {
+    if (!db || !id) return;
+    const { error } = await db.from('client_requests').update(patch).eq('id', id);
+    if (error) console.error('updateClientRequest', error);
+  }
+
+  function digitsOnly(s) { return (s || '').replace(/\D/g, ''); }
+  function normalizeForMatch(s) { return (s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  // Plain Levenshtein edit distance — enough to flag a likely typo/near-duplicate name (e.g.
+  // "Sarah Jones" vs "Sara Jones") without pulling in a fuzzy-matching library for one check.
+  function levenshtein(a, b) {
+    const m = a.length, n = b.length;
+    const dp = [];
+    for (let i = 0; i <= m; i++) { dp.push([i]); }
+    for (let j = 1; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1]);
+      }
+    }
+    return dp[m][n];
+  }
+  function findDuplicateClients(name, whatsapp) {
+    const normName = normalizeForMatch(name);
+    const normPhone = digitsOnly(whatsapp);
+    return clientsCache.filter(c => {
+      if (normPhone && digitsOnly(c.whatsapp) === normPhone) return true;
+      const cn = normalizeForMatch(c.name);
+      if (!cn || !normName) return false;
+      if (cn === normName) return true;
+      return Math.max(cn.length, normName.length) > 4 && levenshtein(cn, normName) <= 2;
+    });
+  }
+
+  function isGoneQuiet(client) {
+    if (!client.last_contact_at) return true;
+    return (Date.now() - new Date(client.last_contact_at).getTime()) / 86400000 > 60;
+  }
+
+  let clientStatusFilter = '';
+  let clientSortMode = 'name';
+  let clientLastPurchaseMap = {};
+
+  async function renderClients() {
+    if (!db) {
+      clientsCache = [];
+      el('clientList').innerHTML = '';
+      el('clientsEmpty').textContent = 'Add your Supabase project URL and anon key in Settings to turn on clients.';
+      el('clientsEmpty').style.display = 'block';
+      return;
+    }
+    clientsCache = await loadClients();
+    clientLastPurchaseMap = await loadClientLastPurchaseMap();
+    applyClientFilters();
+  }
+
+  function applyClientFilters() {
+    const q = el('clientSearch').value.trim().toLowerCase();
+    let filtered = clientsCache;
+    if (clientStatusFilter) filtered = filtered.filter(c => (c.status || 'active') === clientStatusFilter);
+    if (q) filtered = filtered.filter(c => (c.name || '').toLowerCase().includes(q));
+    filtered = filtered.slice().sort((a, b) => {
+      if (clientSortMode === 'recent') {
+        return (clientLastPurchaseMap[b.id] || 0) - (clientLastPurchaseMap[a.id] || 0);
+      }
+      return (a.name || '').localeCompare(b.name || '');
+    });
+    renderClientList(filtered);
+  }
+
+  // onOpen defaults to jumping straight into the client's own profile (the main Clients list,
+  // and the "referred clients" context) — the client picker (linking a product, or setting a
+  // referrer) passes its own callback instead to select the client rather than navigate away.
+  function buildClientRow(client, onOpen) {
+    const open = onOpen || (c => openClientDetail(c.id));
+    const item = document.createElement('div');
+    item.className = 'catalog-item';
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'catalog-open';
+    const avatar = document.createElement('span');
+    avatar.className = 'catalog-avatar';
+    avatar.textContent = initials(client.name);
+    const text = document.createElement('span');
+    text.className = 'catalog-text';
+    const title = document.createElement('span');
+    title.className = 'catalog-title';
+    title.appendChild(document.createTextNode(client.name));
+    if (client.is_vip) {
+      const star = document.createElement('span');
+      star.className = 'vip-star'; star.textContent = '★';
+      title.appendChild(star);
+    }
+    if (isGoneQuiet(client)) {
+      const tag = document.createElement('span');
+      tag.className = 'quiet-tag'; tag.textContent = 'Gone quiet';
+      title.appendChild(tag);
+    }
+    const sub = document.createElement('span');
+    sub.className = 'catalog-sub';
+    const subParts = [client.status || 'active'];
+    if (client.whatsapp) subParts.push(client.whatsapp);
+    const lastPurchase = clientLastPurchaseMap[client.id];
+    if (lastPurchase) subParts.push('Last purchase ' + timeAgo(lastPurchase));
+    sub.textContent = subParts.join(' · ');
+    text.appendChild(title);
+    text.appendChild(sub);
+    const chevWrap = document.createElement('span');
+    chevWrap.innerHTML = CHEV_SVG;
+    btn.appendChild(avatar);
+    btn.appendChild(text);
+    btn.appendChild(chevWrap.firstChild);
+    btn.addEventListener('click', () => open(client));
+    item.appendChild(btn);
+    return item;
+  }
+
+  function renderClientList(list) {
+    const wrap = el('clientList');
+    const empty = el('clientsEmpty');
+    wrap.innerHTML = '';
+    if (!list.length) {
+      empty.textContent = clientsCache.length === 0 ? 'No clients yet — add your first one above.' : 'Nothing matches that search/filter.';
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    list.forEach(c => wrap.appendChild(buildClientRow(c)));
+  }
+
+  el('clientSearch').addEventListener('input', applyClientFilters);
+  el('clientStatusFilterRow').querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      clientStatusFilter = btn.dataset.status;
+      el('clientStatusFilterRow').querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+      applyClientFilters();
+    });
+  });
+  el('clientSortRow').querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      clientSortMode = btn.dataset.sort;
+      el('clientSortRow').querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+      applyClientFilters();
+    });
+  });
+
+  function exportClientsCsv() {
+    const cols = ['name','whatsapp','email','source','status','is_vip','birthday','notes','last_contact_at','created_at'];
+    const escapeCsv = v => {
+      if (v == null) return '';
+      const s = String(v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const rows = [cols.join(',')].concat(clientsCache.map(c => cols.map(k => escapeCsv(c[k])).join(',')));
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'kickbros-clients-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+  el('exportClientsBtn').addEventListener('click', exportClientsCsv);
+
+  // ---- new client modal (also reused as the "+ Add new client" shortcut from the client
+  // picker, so the resulting client can be linked/set as referrer right after creation) ----
+  let pendingNewClientMode = null; // 'productLink' | 'referredBy' | null
+  let newClientHasDupeWarning = false;
+
+  function openNewClientModal() {
+    el('newClientName').value = '';
+    el('newClientWhatsapp').value = '';
+    el('newClientEmail').value = '';
+    el('newClientSource').value = '';
+    el('clientDuplicateWarning').style.display = 'none';
+    el('newClientCreate').textContent = 'Add client';
+    newClientHasDupeWarning = false;
+    el('newClientOverlay').classList.add('open');
+    setTimeout(() => el('newClientName').focus(), 50);
+  }
+  function closeNewClientModal() {
+    el('newClientOverlay').classList.remove('open');
+    pendingNewClientMode = null;
+  }
+  el('newClientBtn').addEventListener('click', () => { pendingNewClientMode = null; openNewClientModal(); });
+  el('newClientCancel').addEventListener('click', closeNewClientModal);
+  el('newClientClose').addEventListener('click', closeNewClientModal);
+  el('newClientOverlay').addEventListener('click', e => { if (e.target === el('newClientOverlay')) closeNewClientModal(); });
+  el('newClientCreate').addEventListener('click', async () => {
+    const name = el('newClientName').value.trim();
+    if (!name) { el('newClientName').focus(); return; }
+    if (!db) { alert('Add your Supabase project URL and anon key in Settings first.'); return; }
+    await ensureClientsCache();
+    const whatsapp = el('newClientWhatsapp').value.trim();
+    if (!newClientHasDupeWarning) {
+      const dupes = findDuplicateClients(name, whatsapp);
+      if (dupes.length) {
+        el('clientDuplicateWarning').textContent = 'Might already exist: ' + dupes.map(d => d.name).join(', ') + ' — tap again to add this as a new client anyway.';
+        el('clientDuplicateWarning').style.display = 'block';
+        el('newClientCreate').textContent = 'Add anyway';
+        newClientHasDupeWarning = true;
+        return;
+      }
+    }
+    const row = await addClient({
+      name, whatsapp: whatsapp || null,
+      email: el('newClientEmail').value.trim() || null,
+      source: el('newClientSource').value || null
+    });
+    if (!row) { alert('Couldn’t save the client — check your Supabase settings.'); return; }
+    clientsCache.push(row);
+    closeNewClientModal();
+    const mode = pendingNewClientMode;
+    pendingNewClientMode = null;
+    if (mode) await selectClientFromPicker(row, mode);
+    else openClientDetail(row.id);
+  });
+
+  // ---- client picker (link a product to a client, or set a client's referrer) ----
+  let clientPickerMode = null; // 'productLink' | 'referredBy'
+  function openClientPicker(mode) {
+    clientPickerMode = mode;
+    el('clientPickerTitle').textContent = mode === 'referredBy' ? 'Choose referring client' : 'Choose a client';
+    el('clientPickerSearch').value = '';
+    renderClientPickerList('');
+    el('clientPickerOverlay').classList.add('open');
+  }
+  function closeClientPicker() {
+    el('clientPickerOverlay').classList.remove('open');
+    clientPickerMode = null;
+  }
+  function renderClientPickerList(q) {
+    const wrap = el('clientPickerList');
+    wrap.innerHTML = '';
+    const query = q.trim().toLowerCase();
+    let list = clientsCache.filter(c => !query || (c.name || '').toLowerCase().includes(query));
+    if (clientPickerMode === 'referredBy' && currentClientDetailId) list = list.filter(c => c.id !== currentClientDetailId);
+    if (!list.length) {
+      const p = document.createElement('p');
+      p.className = 'empty-state'; p.style.padding = '24px 8px';
+      p.textContent = 'No matching clients.';
+      wrap.appendChild(p);
+      return;
+    }
+    list.slice(0, 100).forEach(c => wrap.appendChild(buildClientRow(c, sel => selectClientFromPicker(sel))));
+  }
+  el('clientPickerClose').addEventListener('click', closeClientPicker);
+  el('clientPickerOverlay').addEventListener('click', e => { if (e.target === el('clientPickerOverlay')) closeClientPicker(); });
+  el('clientPickerSearch').addEventListener('input', () => renderClientPickerList(el('clientPickerSearch').value));
+  el('clientPickerAddNewBtn').addEventListener('click', () => {
+    pendingNewClientMode = clientPickerMode;
+    closeClientPicker();
+    openNewClientModal();
+  });
+  async function selectClientFromPicker(client, modeOverride) {
+    const mode = modeOverride || clientPickerMode;
+    if (mode === 'productLink' && productModalEntry) {
+      await updateCatalogEntry(productModalEntry.id, { client_id: client.id });
+      productModalEntry.client_id = client.id;
+      const cached = catalogRows.find(r => r.id === productModalEntry.id);
+      if (cached) cached.client_id = client.id;
+      closeClientPicker();
+      renderPmClientRow();
+    } else if (mode === 'referredBy' && currentClientDetailId) {
+      await updateClient(currentClientDetailId, { referred_by: client.id });
+      closeClientPicker();
+      renderClientDetail(currentClientDetailId);
+    }
+  }
+
+  // ---- client detail (profile) ----
+  let currentClientDetailId = null;
+
+  function openClientDetail(id) {
+    Object.keys(views).forEach(k => views[k].classList.remove('active'));
+    el('tripDetailView').classList.remove('active');
+    el('planTripView').classList.remove('active');
+    el('clientDetailView').classList.add('active');
+    tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === 'clients'));
+    document.body.dataset.tab = 'clients';
+    filterPanel.classList.remove('open');
+    el('tripsDock').classList.remove('show');
+    renderClientDetail(id);
+  }
+  el('clientDetailBack').addEventListener('click', () => switchTab('clients'));
+
+  function renderReferredByRow(client) {
+    const wrap = el('referredByRow');
+    wrap.innerHTML = '';
+    if (client.referred_by) {
+      const referrer = clientsCache.find(c => c.id === client.referred_by);
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'referral-link-btn';
+      link.textContent = referrer ? referrer.name : 'View client';
+      link.addEventListener('click', () => openClientDetail(client.referred_by));
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.textContent = 'Clear';
+      clearBtn.addEventListener('click', async () => {
+        await updateClient(client.id, { referred_by: null });
+        client.referred_by = null;
+        renderClientDetail(client.id);
+      });
+      wrap.appendChild(link);
+      wrap.appendChild(clearBtn);
+    } else {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = '+ Set referrer';
+      btn.addEventListener('click', async () => { await ensureClientsCache(); openClientPicker('referredBy'); });
+      wrap.appendChild(btn);
+    }
+  }
+  function renderReferredList(id) {
+    const referred = clientsCache.filter(c => c.referred_by === id);
+    const wrapOuter = el('referredListWrap');
+    if (!referred.length) { wrapOuter.style.display = 'none'; return; }
+    wrapOuter.style.display = 'block';
+    el('referredList').textContent = referred.map(c => c.name).join(', ');
+  }
+
+  function renderClientPurchases(products) {
+    const wrap = el('clientPurchaseList');
+    const empty = el('clientPurchaseEmpty');
+    wrap.innerHTML = '';
+    const spend = products.reduce((sum, p) => sum + (p.sale_price != null ? p.sale_price * (p.quantity || 1) : 0), 0);
+    const profit = products.reduce((sum, p) => {
+      const qty = p.quantity || 1;
+      return sum + (p.total_profit != null ? p.total_profit : (p.profit != null ? p.profit * qty : 0));
+    }, 0);
+    el('clientTotalsRow').innerHTML =
+      'Items <b>' + products.length + '</b> · Lifetime spend <b class="trip-figure">' + fmtGBP(spend) + '</b> · Lifetime profit <b class="trip-figure">' + fmtGBP(profit) + '</b>';
+    if (!products.length) { empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    products.forEach(entry => {
+      const row = buildCatalogRow(entry, e => openProductDetail(e));
+      if (entry.trip_label) {
+        const sub = row.querySelector('.catalog-sub');
+        if (sub) sub.appendChild(document.createTextNode(' · ' + entry.trip_label));
+      }
+      wrap.appendChild(row);
+    });
+  }
+
+  const DEPOSIT_LABEL = { unpaid: 'Unpaid', deposit_paid: 'Deposit paid', paid_in_full: 'Paid in full' };
+  const DEPOSIT_ORDER = ['unpaid', 'deposit_paid', 'paid_in_full'];
+  function buildRequestRow(req) {
+    const item = document.createElement('div');
+    item.className = 'request-item';
+    const top = document.createElement('div');
+    top.className = 'request-item-top';
+    const title = document.createElement('span');
+    title.className = 'request-item-title';
+    title.textContent = req.item_description || req.brand || 'Untitled request';
+    const depositBtn = document.createElement('button');
+    depositBtn.type = 'button';
+    depositBtn.className = 'deposit-pill';
+    depositBtn.dataset.deposit = req.deposit_status || 'unpaid';
+    depositBtn.textContent = DEPOSIT_LABEL[req.deposit_status || 'unpaid'];
+    depositBtn.addEventListener('click', async () => {
+      const next = DEPOSIT_ORDER[(DEPOSIT_ORDER.indexOf(depositBtn.dataset.deposit) + 1) % DEPOSIT_ORDER.length];
+      depositBtn.dataset.deposit = next;
+      depositBtn.textContent = DEPOSIT_LABEL[next];
+      await updateClientRequest(req.id, { deposit_status: next });
+      req.deposit_status = next;
+    });
+    top.appendChild(title);
+    top.appendChild(depositBtn);
+
+    const sub = document.createElement('div');
+    sub.className = 'request-item-sub';
+    const subParts = [];
+    if (req.brand) subParts.push(req.brand);
+    if (req.budget != null) subParts.push('Budget ' + fmtGBP(req.budget));
+    if (req.fulfilled) subParts.push('Fulfilled');
+    sub.textContent = subParts.join(' · ');
+
+    const actions = document.createElement('div');
+    actions.className = 'request-item-actions';
+    if (!req.fulfilled) {
+      const linkBtn = document.createElement('button');
+      linkBtn.type = 'button';
+      linkBtn.textContent = 'Link & fulfil';
+      linkBtn.addEventListener('click', () => openRequestLink(req));
+      actions.appendChild(linkBtn);
+    } else if (req.linked_product_id) {
+      const viewBtn = document.createElement('button');
+      viewBtn.type = 'button';
+      viewBtn.textContent = 'View product';
+      viewBtn.addEventListener('click', async () => {
+        if (!db) return;
+        const { data } = await db.from('products').select('*').eq('id', req.linked_product_id).single();
+        if (data) openProductDetail(data);
+      });
+      actions.appendChild(viewBtn);
+    }
+
+    item.appendChild(top);
+    item.appendChild(sub);
+    item.appendChild(actions);
+    return item;
+  }
+  function renderClientRequests(requests) {
+    const wrap = el('clientRequestList');
+    const empty = el('clientRequestEmpty');
+    wrap.innerHTML = '';
+    if (!requests.length) { empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    requests.forEach(r => wrap.appendChild(buildRequestRow(r)));
+  }
+
+  async function renderClientDetail(id) {
+    currentClientDetailId = id;
+    await ensureClientsCache();
+    let client = clientsCache.find(c => c.id === id);
+    if (!client && db) {
+      const { data } = await db.from('clients').select('*').eq('id', id).single();
+      client = data || null;
+      if (client) clientsCache.push(client);
+    }
+    if (!client) return;
+
+    el('clientDetailAvatar').textContent = initials(client.name);
+    el('clientDetailName').textContent = client.name;
+    el('clientDetailStatusTag').textContent = client.status || 'active';
+    el('clientDetailStatusTag').dataset.status = client.status || 'active';
+    el('clientDetailQuietTag').style.display = isGoneQuiet(client) ? 'inline-block' : 'none';
+
+    const waHref = client.whatsapp ? ('https://wa.me/' + digitsOnly(client.whatsapp)) : null;
+    el('clientWhatsappBtn').href = waHref || '#';
+    el('clientWhatsappBtn').style.opacity = waHref ? '1' : '.4';
+    el('clientWhatsappBtn').style.pointerEvents = waHref ? 'auto' : 'none';
+
+    el('vipToggleBtn').textContent = client.is_vip ? '★ VIP' : '☆ VIP';
+    el('vipToggleBtn').classList.toggle('on', !!client.is_vip);
+
+    const infoLines = [];
+    if (client.whatsapp) infoLines.push('WhatsApp: ' + client.whatsapp);
+    if (client.email) infoLines.push('Email: ' + client.email);
+    infoLines.push(client.last_contact_at ? 'Last contact: ' + timeAgo(new Date(client.last_contact_at).getTime()) : 'Never contacted');
+    el('clientContactInfo').textContent = infoLines.join(' · ');
+
+    el('clientStatusSelect').value = client.status || 'active';
+    el('clientBirthday').value = client.birthday || '';
+    el('clientNotes').value = client.notes || '';
+
+    renderReferredByRow(client);
+    renderReferredList(id);
+
+    const products = await loadClientProducts(id);
+    renderClientPurchases(products);
+
+    const requests = await loadClientRequests(id);
+    renderClientRequests(requests);
+  }
+
+  el('clientStatusSelect').addEventListener('change', async () => {
+    if (!currentClientDetailId) return;
+    const value = el('clientStatusSelect').value;
+    await updateClient(currentClientDetailId, { status: value });
+    const c = clientsCache.find(x => x.id === currentClientDetailId);
+    if (c) c.status = value;
+    el('clientDetailStatusTag').textContent = value;
+    el('clientDetailStatusTag').dataset.status = value;
+  });
+  el('clientBirthday').addEventListener('change', async () => {
+    if (!currentClientDetailId) return;
+    const value = el('clientBirthday').value || null;
+    await updateClient(currentClientDetailId, { birthday: value });
+    const c = clientsCache.find(x => x.id === currentClientDetailId);
+    if (c) c.birthday = value;
+  });
+  let clientNotesTimer = null;
+  el('clientNotes').addEventListener('input', () => {
+    clearTimeout(clientNotesTimer);
+    clientNotesTimer = setTimeout(async () => {
+      if (!currentClientDetailId) return;
+      const value = el('clientNotes').value.trim() || null;
+      await updateClient(currentClientDetailId, { notes: value });
+      const c = clientsCache.find(x => x.id === currentClientDetailId);
+      if (c) c.notes = value;
+    }, 500);
+  });
+  el('vipToggleBtn').addEventListener('click', async () => {
+    if (!currentClientDetailId) return;
+    const c = clientsCache.find(x => x.id === currentClientDetailId);
+    const next = !(c && c.is_vip);
+    await updateClient(currentClientDetailId, { is_vip: next });
+    if (c) c.is_vip = next;
+    el('vipToggleBtn').textContent = next ? '★ VIP' : '☆ VIP';
+    el('vipToggleBtn').classList.toggle('on', next);
+  });
+  el('markContactedBtn').addEventListener('click', async () => {
+    if (!currentClientDetailId) return;
+    const now = new Date().toISOString();
+    await updateClient(currentClientDetailId, { last_contact_at: now });
+    const c = clientsCache.find(x => x.id === currentClientDetailId);
+    if (c) c.last_contact_at = now;
+    renderClientDetail(currentClientDetailId);
+  });
+
+  // ---- stats popup (free-form key/value list backed by clients.stats jsonb) ----
+  let statsDraft = {};
+  function buildStatRow(key, value) {
+    const row = document.createElement('div');
+    row.className = 'stats-row';
+    const keyInput = document.createElement('input');
+    keyInput.value = key; keyInput.placeholder = 'Field (e.g. Shoe size)';
+    const valInput = document.createElement('input');
+    valInput.value = value; valInput.placeholder = 'Value';
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button'; delBtn.textContent = '×';
+    delBtn.addEventListener('click', () => row.remove());
+    row.appendChild(keyInput);
+    row.appendChild(valInput);
+    row.appendChild(delBtn);
+    return row;
+  }
+  el('openStatsBtn').addEventListener('click', () => {
+    if (!currentClientDetailId) return;
+    const c = clientsCache.find(x => x.id === currentClientDetailId);
+    statsDraft = Object.assign({}, (c && c.stats) || {});
+    const wrap = el('statsRows');
+    wrap.innerHTML = '';
+    Object.keys(statsDraft).forEach(k => wrap.appendChild(buildStatRow(k, statsDraft[k])));
+    el('statsOverlay').classList.add('open');
+  });
+  el('addStatRowBtn').addEventListener('click', () => el('statsRows').appendChild(buildStatRow('', '')));
+  function closeStatsOverlay() { el('statsOverlay').classList.remove('open'); }
+  el('statsClose').addEventListener('click', closeStatsOverlay);
+  el('statsOverlay').addEventListener('click', e => { if (e.target === el('statsOverlay')) closeStatsOverlay(); });
+  el('statsSaveBtn').addEventListener('click', async () => {
+    if (!currentClientDetailId) return;
+    const newStats = {};
+    el('statsRows').querySelectorAll('.stats-row').forEach(row => {
+      const inputs = row.querySelectorAll('input');
+      const k = inputs[0].value.trim();
+      if (k) newStats[k] = inputs[1].value.trim();
+    });
+    await updateClient(currentClientDetailId, { stats: newStats });
+    const c = clientsCache.find(x => x.id === currentClientDetailId);
+    if (c) c.stats = newStats;
+    closeStatsOverlay();
+  });
+
+  // ---- pending requests: new request + link-to-product-and-fulfil ----
+  function openNewRequestModal() {
+    el('newRequestDesc').value = '';
+    el('newRequestBrand').value = '';
+    el('newRequestBudget').value = '';
+    el('newRequestOverlay').classList.add('open');
+    setTimeout(() => el('newRequestDesc').focus(), 50);
+  }
+  function closeNewRequestModal() { el('newRequestOverlay').classList.remove('open'); }
+  el('newRequestBtn').addEventListener('click', openNewRequestModal);
+  el('newRequestCancel').addEventListener('click', closeNewRequestModal);
+  el('newRequestClose').addEventListener('click', closeNewRequestModal);
+  el('newRequestOverlay').addEventListener('click', e => { if (e.target === el('newRequestOverlay')) closeNewRequestModal(); });
+  el('newRequestCreate').addEventListener('click', async () => {
+    if (!currentClientDetailId) return;
+    const desc = el('newRequestDesc').value.trim();
+    if (!desc) { el('newRequestDesc').focus(); return; }
+    const budget = parseFloat(el('newRequestBudget').value);
+    const row = await addClientRequest({
+      client_id: currentClientDetailId,
+      item_description: desc,
+      brand: el('newRequestBrand').value.trim() || null,
+      budget: isNaN(budget) ? null : budget
+    });
+    if (!row) { alert('Couldn’t save the request.'); return; }
+    closeNewRequestModal();
+    renderClientDetail(currentClientDetailId);
+  });
+
+  let requestLinkTarget = null;
+  async function openRequestLink(req) {
+    requestLinkTarget = req;
+    if (!catalogRows.length) catalogRows = await loadCatalog();
+    el('requestLinkSearch').value = '';
+    renderRequestLinkList('');
+    el('requestLinkOverlay').classList.add('open');
+  }
+  function closeRequestLink() {
+    el('requestLinkOverlay').classList.remove('open');
+    requestLinkTarget = null;
+  }
+  function renderRequestLinkList(q) {
+    const wrap = el('requestLinkList');
+    wrap.innerHTML = '';
+    const query = q.trim().toLowerCase();
+    const list = catalogRows.filter(e => !query ||
+      (e.product_name && e.product_name.toLowerCase().includes(query)) ||
+      (e.brand && e.brand.toLowerCase().includes(query))
+    );
+    if (!list.length) {
+      const p = document.createElement('p');
+      p.className = 'empty-state'; p.style.padding = '24px 8px';
+      p.textContent = 'No matching items.';
+      wrap.appendChild(p);
+      return;
+    }
+    list.slice(0, 100).forEach(entry => {
+      wrap.appendChild(buildCatalogRow(entry, async e => {
+        await updateClientRequest(requestLinkTarget.id, { linked_product_id: e.id, fulfilled: true });
+        closeRequestLink();
+        renderClientDetail(currentClientDetailId);
+      }));
+    });
+  }
+  el('requestLinkClose').addEventListener('click', closeRequestLink);
+  el('requestLinkOverlay').addEventListener('click', e => { if (e.target === el('requestLinkOverlay')) closeRequestLink(); });
+  el('requestLinkSearch').addEventListener('input', () => renderRequestLinkList(el('requestLinkSearch').value));
+
   // ---- tabs ----
-  const views = { prices: el('pricesView'), catalog: el('catalogView'), trips: el('tripsView'), settings: el('settingsView') };
+  const views = { prices: el('pricesView'), catalog: el('catalogView'), clients: el('clientsView'), trips: el('tripsView'), settings: el('settingsView') };
   const tabButtons = document.querySelectorAll('.tab-btn');
   function switchTab(name) {
     Object.keys(views).forEach(k => views[k].classList.toggle('active', k === name));
     el('tripDetailView').classList.remove('active');
     el('planTripView').classList.remove('active');
+    el('clientDetailView').classList.remove('active');
     tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     document.body.dataset.tab = name;
     filterPanel.classList.remove('open');
@@ -2636,9 +3799,19 @@
     }
     el('tripsDock').classList.toggle('show', name === 'trips');
     if (name === 'catalog') renderCatalog();
+    if (name === 'clients') renderClients();
     if (name === 'trips') renderTripsCalendar();
   }
   tabButtons.forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+  // Re-renders whichever list is currently on screen after a product edit/delete made from the
+  // product-detail modal (Catalog row, Trip Detail row, or a client's purchase-history row) —
+  // the modal itself doesn't know which of those it was opened from.
+  function refreshAfterProductChange() {
+    if (document.body.dataset.tab === 'catalog') applyCatalogFilters();
+    if (el('tripDetailView').classList.contains('active') && currentTripDetailLabel) renderTripDetail(currentTripDetailLabel);
+    if (el('clientDetailView').classList.contains('active') && currentClientDetailId) renderClientDetail(currentClientDetailId);
+  }
 
   // ---- pricing calc ----
   // Max amount the customer should ever save vs UK RRP, by RRP band — keeps the
@@ -2768,7 +3941,6 @@
     el('saleVal').value = '';
     el('tripAddRow').classList.toggle('show', !!current.tripLabel);
     el('cardBackBtn').classList.toggle('show', !!cardReturnTo);
-    el('cardDeleteRow').classList.toggle('show', cardReturnTo === 'catalog');
     card.classList.add('show');
     document.body.classList.add('result-active');
     document.body.classList.remove('dock-open');
@@ -2790,30 +3962,39 @@
     cardReturnTo = null;
     cardReturnTripLabel = null;
     el('cardBackBtn').classList.remove('show');
-    el('cardDeleteRow').classList.remove('show');
     setTimeout(() => urlInput.focus(), 100);
   }
   el('newCheckBtn').addEventListener('click', startNewCheck);
 
   el('cardBackBtn').addEventListener('click', () => {
     if (cardReturnTo === 'tripDetail' && cardReturnTripLabel) openTripDetail(cardReturnTripLabel);
-    else if (cardReturnTo === 'catalog') switchTab('catalog');
   });
 
+  // Generic delete-confirm dialog — its only caller now is the product-detail modal (see
+  // "product detail" section below); the Prices-tab card never shows a delete option since it
+  // only ever displays a fresh, not-yet-existing-until-saved check.
+  let pendingDeleteId = null;
   function closeDeleteConfirm() { el('deleteConfirmOverlay').classList.remove('open'); }
-  el('deleteCatalogBtn').addEventListener('click', () => el('deleteConfirmOverlay').classList.add('open'));
+  function confirmDeleteProduct(id) {
+    pendingDeleteId = id;
+    el('deleteConfirmOverlay').classList.add('open');
+  }
   el('deleteConfirmCancel').addEventListener('click', closeDeleteConfirm);
   el('deleteConfirmClose').addEventListener('click', closeDeleteConfirm);
   el('deleteConfirmOverlay').addEventListener('click', e => { if (e.target === el('deleteConfirmOverlay')) closeDeleteConfirm(); });
   el('deleteConfirmBtn').addEventListener('click', async () => {
-    const id = current.catalogId;
+    const id = pendingDeleteId;
     closeDeleteConfirm();
+    pendingDeleteId = null;
     const ok = await deleteCatalogEntry(id);
-    if (!ok) { setStatus('Could not delete — try again.', true); return; }
-    cardReturnTo = null;
-    cardReturnTripLabel = null;
-    current.catalogId = null;
-    switchTab('catalog');
+    if (!ok) { alert('Could not delete — try again.'); return; }
+    // Deliberately not calling closeProductDetail() — it flushes any pending debounced edit by
+    // writing back to this id, which the delete above just removed from the database.
+    clearTimeout(productModalSyncTimer);
+    productModalEntry = null;
+    el('productDetailOverlay').classList.remove('open');
+    catalogRows = catalogRows.filter(r => r.id !== id);
+    refreshAfterProductChange();
   });
 
   function resetCardMode() {

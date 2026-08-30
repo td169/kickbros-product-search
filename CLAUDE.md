@@ -233,12 +233,127 @@ merging in a fresh scrape's result (`runCheck` only — `showManualMode` never o
 clobber a good price the existing row already had — always merge as
 `info.ukPrice != null ? info.ukPrice : existing.uk_retail`, never just `info.ukPrice`.
 
-Catalog rows (`buildCatalogRow`, shared by the Catalog tab, Trip Detail, and the catalog
-picker) intentionally show as little as possible: no brand text, no status pill (status is only
-editable from the full card now). The sub-line is just the bare figures in a fixed order — FR
-retail, UK retail, sale price, then profit (green if positive, red if negative via
+Catalog rows (`buildCatalogRow`, shared by the Catalog tab, Trip Detail, a client's purchase
+history, and the request-linking/client-linking pickers) intentionally show as little as
+possible: no brand text, no status pill (status is only editable from the product-detail modal
+now — see below). The sub-line is just the bare figures in a fixed order — FR retail, UK
+retail, sale price, then profit (green if positive, red if negative via
 `trip-net-pos`/`trip-net-neg`, the same classes Trips uses) — no "FR price:"-style labels, no
-trip label, no date.
+trip label, no date (callers that want the trip label, e.g. client purchase history, append it
+to the row's `.catalog-sub` themselves after the fact rather than teaching the shared builder
+about it).
+
+Only two statuses exist: `stock` and `sold`. A third, `missed_sale`, existed originally but was
+removed — the business never actually used the distinction (an unsold item just means it's
+still in stock, not a separate failure state) — so `STATUS_LABEL`/`STATUS_ORDER` only list
+`stock`/`sold` and `cycleStatus` just toggles between them. If a live table still has old rows
+with `status = 'missed_sale'` in it, run this once in the Supabase SQL editor (the anon key
+can't run DDL) to migrate them and lock the column back down:
+
+```sql
+update products set status = 'stock' where status = 'missed_sale';
+alter table products drop constraint if exists products_status_check;
+alter table products add constraint products_status_check check (status in ('stock', 'sold'));
+```
+
+### Product-detail modal (Catalog / Trip Detail / a client's purchase history)
+
+Tapping an existing product from any of those three places used to route back into the
+Prices-tab card (`reopenCatalogEntry`) — the same UI a live check uses. That's gone: the card is
+now exclusively for a fresh, in-progress check (nothing meaningful to delete or link a client to
+until it's actually saved), and viewing/editing something already in the catalog opens
+`#productDetailOverlay` (`openProductDetail(entry)`) instead — a modal, not a tab switch, so
+whichever list it was opened from is still there underneath once it closes. It duplicates the
+card's pricing math (`recalcProductModal` mirrors `recalc()` — same détaxe/margin/SAVE_CAPS/
+reseller rules) rather than sharing it, since the modal deliberately skips the card's "auto-fill
+the sale price until the user overrides it" behavior (an existing catalog row already has a real
+recorded price, not a fresh suggestion). `refreshAfterProductChange()` re-renders whichever of
+Catalog/Trip Detail/Client Detail is actually on screen after an edit or delete, since the modal
+itself doesn't track which one opened it.
+
+This is also the only place the optional client link (`products.client_id`) lives — see Clients
+below. The main Prices tab never shows client-linking UI, on purpose.
+
+The old `deleteConfirmOverlay` confirm dialog is now generic (`confirmDeleteProduct(id)` +
+module-level `pendingDeleteId`) rather than reading `current.catalogId` — its only caller is the
+product-detail modal's delete button, since the card itself never shows a delete option anymore.
+
+### Clients (Supabase `clients` / `client_requests` tables, plus `products.client_id`)
+
+All three must be created manually in the Supabase SQL editor first (the anon key can't run
+DDL, same as `trips`/`flight_prices`/`hotel_prices`):
+
+```sql
+create table clients (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  name text not null,
+  whatsapp text,
+  email text,
+  source text,
+  status text default 'active' check (status in ('active', 'inactive', 'prospect')),
+  notes text,
+  is_vip boolean default false,
+  birthday date,
+  referred_by uuid references clients(id),
+  last_contact_at timestamptz,
+  stats jsonb default '{}'::jsonb
+);
+alter table clients enable row level security;
+create policy "allow all" on clients for all using (true) with check (true);
+
+alter table products add column client_id uuid references clients(id);
+
+create table client_requests (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz default now(),
+  client_id uuid references clients(id) not null,
+  item_description text,
+  brand text,
+  budget numeric,
+  deposit_status text default 'unpaid' check (deposit_status in ('unpaid', 'deposit_paid', 'paid_in_full')),
+  fulfilled boolean default false,
+  linked_product_id uuid references products(id)
+);
+alter table client_requests enable row level security;
+create policy "allow all" on client_requests for all using (true) with check (true);
+```
+
+Until those exist, `renderClients()`/`loadClients()` fail closed the same way `loadTripCosts`
+does — empty list, logged error, the Clients tab just shows its empty state.
+
+"Gone quiet" (`isGoneQuiet`) is computed purely from `last_contact_at` being unset or more than
+60 days old — never from `last_contact_at` vs a purchase date, since there's no real WhatsApp
+integration to detect actual contact automatically; "Mark contacted today" just bumps
+`last_contact_at` to `now()`. The "Sort: Last purchase" toggle in the Clients tab is a separate
+signal (`loadClientLastPurchaseMap`, the max `products.created_at` per `client_id`) from gone-
+quiet on purpose — a client who bought recently but hasn't been messaged since can still show
+both "Last purchase: 2 days ago" and the "Gone quiet" badge at the same time.
+
+Duplicate-client detection (`findDuplicateClients`, run when "Add client" is tapped) flags either
+an exact same WhatsApp number (digits-only comparison) or a near-identical name (plain
+Levenshtein distance ≤ 2, only for names longer than 4 characters so short names like "Jo"/"Jon"
+don't false-positive on every other short name) — same pattern as the duplicate-catalog-entry
+problem `findExistingBySku` already solves for products. It doesn't block creation, just warns
+once (`newClientHasDupeWarning`) and requires a second tap of "Add anyway" to actually insert.
+
+The client picker (`#clientPickerOverlay`, `openClientPicker(mode)`) is shared by two unrelated
+flows — linking a product to a client from the product-detail modal (`mode: 'productLink'`) and
+setting a client's own referrer (`mode: 'referredBy'`) — rather than building two near-identical
+modals. Its "+ Add new client" shortcut opens the same `#newClientOverlay` used everywhere else;
+`pendingNewClientMode` remembers which of the two flows triggered it so the newly-created client
+gets linked/set-as-referrer immediately instead of just landing on its own profile.
+
+`clients.stats` (shoe size, preferred brands, etc.) is deliberately free-form — a plain key/value
+list (`#statsOverlay`) backed straight by the jsonb column, no fixed schema, since the whole
+point is not having to add a new column every time a new kind of detail comes up.
+
+A client's purchase history reuses `buildCatalogRow` (same as Catalog/Trip Detail) rather than a
+bespoke renderer — this also means the privacy-blur toggle and `.trip-net-pos`/`.trip-net-neg`
+profit coloring apply there for free. The trip label a row belongs to isn't part of
+`buildCatalogRow` itself (see above) — `renderClientPurchases` appends it to the row's
+`.catalog-sub` afterwards.
 
 ### Trips tab (Catalog `trip_label` values shown as trips, plus its own `trips` table)
 
