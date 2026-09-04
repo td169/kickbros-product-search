@@ -186,10 +186,23 @@ back with the product name literally showing "Dior" instead of an actual product
 
 Fixed in two places:
 - `serperLookup`'s candidate order is: same-domain result with a path that looks like a real
-  product page (`looksLikeProductPage` — path length > 15, i.e. not just `/`) → *any* result
-  that looks like a real product page even off-domain (a reseller with the real listing beats
-  the brand's own homepage) → the same-domain match anyway, shallow or not → whatever Google
-  ranked first. A homepage no longer wins just for matching the hostname.
+  product page (`looksLikeProductPage` — path length > 15, i.e. not just `/`) → the same-domain
+  match anyway, shallow or not → **nothing**, if Google simply never indexed the actual site for
+  this query. It used to also fall through to *any* off-domain result that merely looked like a
+  product page, then to whatever Google ranked first, on the theory that a reseller's real
+  listing beats the brand's own homepage — walked back on user instruction: an unverified
+  third-party page can carry a genuinely different price for what only looks like the same item
+  (a different colourway, a different condition, a different item entirely), and a silently
+  wrong price is worse than no price. A candidate now has to actually be the target site (or a
+  subdomain of it) before its price/title get trusted at all, never just "looks plausible."
+  Domain matching is done by `sameSite(hostnameA, hostnameB)`, not a raw `.includes()` — it
+  strips a leading `www.` from both sides and allows either to be a subdomain of the other,
+  which matters in practice: `chanel.com`'s Google-indexed FR result has no `www.` prefix at all
+  while the site's own canonical UK link does, and a plain substring check would silently reject
+  a perfectly genuine same-site match over that alone. `serperShoppingLookup` (the `/shopping`
+  fallback, see below) applies the exact same `sameSite` requirement — it also used to fall back
+  to `items[0]` regardless of domain, which is the same class of "trust an unverified seller's
+  price" problem.
 - `cleanTitle` is a second, independent safety net: if a title, once the trailing `| Brand`
   stripped, is *just* the brand name on its own, it returns `null` instead of that bare name —
   same as "no title at all." `applyName` in both `trySerperFill` and `trySerperPriceFallback`
