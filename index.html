@@ -260,6 +260,13 @@
     animation:pulse 1.1s ease-in-out infinite;
   }
   @keyframes pulse{0%,100%{opacity:.25;}50%{opacity:1;}}
+  /* Shown next to a price field while a background lookup (scrape fallback / Serper / Shopping)
+     is still trying to find that price; hidden the moment that attempt ends, found or not — its
+     absence plus an empty field is the signal that every method was tried and none worked. */
+  .price-dots{
+    margin-left:6px;font-weight:700;letter-spacing:1px;color:var(--muted);
+    animation:pulse 1.1s ease-in-out infinite;
+  }
 
   /* result card */
   .card{
@@ -998,11 +1005,11 @@
       <div class="ledger">
         <div class="ledger-row">
           <div class="label">FR price<span class="manual-badge">type it in</span></div>
-          <div class="val"><input type="number" id="frPrice" step="0.01">&nbsp;€</div>
+          <div class="val"><input type="number" id="frPrice" step="0.01">&nbsp;€<span class="price-dots" id="frPriceLoading" hidden>···</span></div>
         </div>
         <div class="ledger-row">
           <div class="label">UK price<span class="manual-badge">type it in</span></div>
-          <div class="val"><input type="number" id="ukPrice" step="0.01">&nbsp;£</div>
+          <div class="val"><input type="number" id="ukPrice" step="0.01">&nbsp;£<span class="price-dots" id="ukPriceLoading" hidden>···</span></div>
         </div>
         <div class="ledger-row sub">
           <div class="label">Exchange rate (EUR→GBP)</div>
@@ -1661,6 +1668,27 @@
       // manually" fallback kick in, reusing that flow instead of building bespoke UI for this.
       build: (url) => ({ uk: url, fr: url }),
       localePatterns: { fr: /^https?:\/\/fr\./i, uk: /^https?:\/\/uk\./i }
+    },
+    chanel: { name:'Chanel', test: h => h.includes('chanel.com'), scrapeBlocked:true,
+      // Confirmed live: both /gb/fashion/ and /fr/mode/ product URLs 403 under a plain fetch
+      // with real browser headers — same network-level block as Dior/LV, so this goes straight
+      // to manual mode rather than attempting a doomed Apify scrape.
+      // Locale+category word both differ (gb/fashion vs fr/mode, not just a locale segment),
+      // but — confirmed live via search: the same product code (G02819X01000C0204) resolves on
+      // both locales even though the descriptive slug differs ("ballet-flats-lambskin" vs
+      // "ballerines-agneau-metal") — same canonicalise-on-code, tolerate-mismatched-slug
+      // pattern as Prada, so a direct word-swap is safe here.
+      build: (url) => ({
+        uk: url.replace('/fr/mode/', '/gb/fashion/'),
+        fr: url.replace('/gb/fashion/', '/fr/mode/')
+      }),
+      localePatterns: { fr: /\/fr\/mode\//i, uk: /\/gb\/fashion\//i },
+      // Unlike Prada's .../p/<slug>/<code> (where the generic "last path segment" getSku
+      // already lands on the code), Chanel's URL puts the code BEFORE the slug —
+      // .../p/<code>/<slug>/ — so the generic getSku would return the (locale-specific,
+      // mismatched-across-UK/FR) slug instead. Pull the code out explicitly so re-checking the
+      // same item from either locale's link still dedupes to the same catalog row.
+      sku: url => { const m = url.match(/\/p\/([A-Z0-9]+)\//); return m ? m[1] : null; }
     }
   };
 
@@ -3924,7 +3952,18 @@
   }
   el('saleVal').addEventListener('input', () => { saleOverridden = true; recalc(); });
 
+  // Toggles the "···" indicator next to a price field while a background lookup for it is
+  // in flight. Always guarded by current.catalogId === id at the call site (same convention
+  // as applyName/applyPrice) so a stale flow for a product the user has since navigated away
+  // from can't touch dots that now belong to whatever's on screen.
+  function setPriceLoading(fieldId, loading) {
+    const dots = el(fieldId + 'Loading');
+    if (dots) dots.hidden = !loading;
+  }
+
   function renderCard(brandLabel, productName, imageUrl, ukUrl, frUrl, ukPrice, frPrice, rate, notes) {
+    setPriceLoading('frPrice', false);
+    setPriceLoading('ukPrice', false);
     el('brandName').textContent = brandLabel || 'Unrecognised brand';
     el('prodName').value = productName || '';
     el('prodImg').src = imageUrl || PLACEHOLDER_IMG;
@@ -4022,6 +4061,29 @@
   // Google's own crawler gets past bot protection that blocks us directly (sites allow-list
   // it for SEO) — Serper returns Google's results as JSON, with "organic" already excluding
   // shopping ads/sponsored results, so organic[0] is the first real listing.
+  // Second price-lookup method, used when the organic search below doesn't turn up a price.
+  // Google Shopping carries its own structured `price` field per listing — set from the
+  // merchant's product feed, not scraped from a snippet — so it finds a price on pages whose
+  // indexed title/snippet text never mentions one at all (seen on some LV and Chanel product
+  // pages). Queried by product title when we have one (Shopping's index matches product names
+  // far better than an exact page URL); falls back to the URL itself when we don't.
+  async function serperShoppingLookup(query, token, isFr, targetHostname) {
+    const res = await fetch('https://google.serper.dev/shopping', {
+      method: 'POST',
+      headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: query, num: 10, gl: isFr ? 'fr' : 'gb', hl: isFr ? 'fr' : 'en' })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const items = (data && data.shopping) || [];
+    if (!items.length) return null;
+    const hostMatches = targetHostname
+      ? items.filter(it => { try { return new URL(it.link).hostname.includes(targetHostname); } catch (e) { return false; } })
+      : [];
+    const top = hostMatches[0] || items[0];
+    return top ? { title: top.title || null, price: top.price || null } : null;
+  }
+
   async function serperLookup(url, token, targetHostname) {
     // gl/hl locale hints matter here: Google's "exact URL as query" ranking is noticeably more
     // forgiving for English/UK content than French, so an FR lookup without them is more likely
@@ -4054,15 +4116,23 @@
       || results.find(r => looksLikeProductPage(r.link))
       || hostMatches[0]
       || results[0];
-    if (!top) return null;
-    const text = [top.title, top.snippet].filter(Boolean).join(' ');
+    const text = top ? [top.title, top.snippet].filter(Boolean).join(' ') : '';
     const gbpMatch = text.match(/£\s?\d(?:[\d,.\s]*\d)?/);
     const eurMatch = text.match(/€\s?\d(?:[\d,.\s]*\d)?|\d(?:[\d,.\s]*\d)?\s?€/);
-    return {
-      title: top.title || null,
-      gbpPrice: gbpMatch ? gbpMatch[0] : null,
-      eurPrice: eurMatch ? eurMatch[0] : null
-    };
+    let title = top ? (top.title || null) : null;
+    let gbpPrice = gbpMatch ? gbpMatch[0] : null;
+    let eurPrice = eurMatch ? eurMatch[0] : null;
+
+    if (!gbpPrice && !eurPrice) {
+      const shop = await serperShoppingLookup(title || url, token, isFr, targetHostname).catch(err => { console.error('serperShoppingLookup', err); return null; });
+      if (shop) {
+        title = title || shop.title;
+        if (shop.price) { if (isFr) eurPrice = shop.price; else gbpPrice = shop.price; }
+      }
+    }
+
+    if (!title && !gbpPrice && !eurPrice) return null;
+    return { title, gbpPrice, eurPrice };
   }
 
   // Used when build() can't derive the second locale's link at all (Hermès, Loro Piana — see
@@ -4154,15 +4224,17 @@
     }
 
     try {
+      if (current.catalogId === id && !el('ukPrice').value) setPriceLoading('ukPrice', true);
       const ukInfo = await serperLookup(ukUrl, token, new URL(ukUrl).hostname).catch(err => { console.error('serperLookup (UK)', id, err); return null; });
       applyName(ukInfo && ukInfo.title);
       applyPrice('ukPrice', ukInfo ? parseMoney(ukInfo.gbpPrice) : null);
-      if (current.catalogId === id) recalc();
+      if (current.catalogId === id) { setPriceLoading('ukPrice', false); recalc(); }
 
+      if (current.catalogId === id && !el('frPrice').value) setPriceLoading('frPrice', true);
       const frInfo = await serperLookup(frUrl, token, new URL(frUrl).hostname).catch(err => { console.error('serperLookup (FR)', id, err); return null; });
       applyName(frInfo && frInfo.title);
       applyPrice('frPrice', frInfo ? parseMoney(frInfo.eurPrice) : null);
-      if (current.catalogId === id) recalc();
+      if (current.catalogId === id) { setPriceLoading('frPrice', false); recalc(); }
 
       // Unlike name/price above, the image is never derived from what's currently in the DOM,
       // so it doesn't need to stay on-screen to be valid — persist it to row `id` regardless of
@@ -4184,7 +4256,10 @@
       if (current.catalogId === id && anyApplied) {
         updateCatalogEntry(id, buildCatalogPatch());
       }
-    } catch (e) { console.error('trySerperFill failed for', id, e); }
+    } catch (e) {
+      console.error('trySerperFill failed for', id, e);
+      if (current.catalogId === id) { setPriceLoading('ukPrice', false); setPriceLoading('frPrice', false); }
+    }
   }
 
   // For scraped brands where the page's own og:image was missing — same Google Images
@@ -4245,16 +4320,18 @@
 
     try {
       if (needUk) {
+        if (current.catalogId === id) setPriceLoading('ukPrice', true);
         const ukInfo = await serperLookup(ukUrl, token, new URL(ukUrl).hostname).catch(err => { console.error('serperLookup (UK)', id, err); return null; });
         applyName(ukInfo && ukInfo.title);
         applyPrice('ukPrice', ukInfo ? parseMoney(ukInfo.gbpPrice) : null);
-        if (current.catalogId === id) recalc();
+        if (current.catalogId === id) { setPriceLoading('ukPrice', false); recalc(); }
       }
       if (needFr) {
+        if (current.catalogId === id) setPriceLoading('frPrice', true);
         const frInfo = await serperLookup(frUrl, token, new URL(frUrl).hostname).catch(err => { console.error('serperLookup (FR)', id, err); return null; });
         applyName(frInfo && frInfo.title);
         applyPrice('frPrice', frInfo ? parseMoney(frInfo.eurPrice) : null);
-        if (current.catalogId === id) recalc();
+        if (current.catalogId === id) { setPriceLoading('frPrice', false); recalc(); }
       }
       if (current.catalogId === id) {
         // The scrape's "couldn't confirm the price automatically" note is now stale — refresh
@@ -4268,7 +4345,10 @@
             ' — enter it manually below.');
         updateCatalogEntry(id, buildCatalogPatch());
       }
-    } catch (e) { console.error('trySerperPriceFallback failed for', id, e); }
+    } catch (e) {
+      console.error('trySerperPriceFallback failed for', id, e);
+      if (current.catalogId === id) { setPriceLoading('ukPrice', false); setPriceLoading('frPrice', false); }
+    }
   }
 
   // Some brands' sites block automated scraping outright (bot protection) — for those,
@@ -4278,7 +4358,10 @@
     card.classList.add('manual-mode');
     current.catalogId = null;
     current.brandKey = brandKey;
-    current.sku = getSku(ukUrl) || getSku(frUrl);
+    // A brand can supply its own sku extractor (see Chanel) when the generic "last path
+    // segment" doesn't land on the actual product code.
+    const skuOf = (BRANDS[brandKey] && BRANDS[brandKey].sku) || getSku;
+    current.sku = skuOf(ukUrl) || skuOf(frUrl);
 
     // Two separate "have we seen this before" sources: the shared Supabase catalog (existing —
     // takes priority, since it's the real record and lets us update it instead of duplicating

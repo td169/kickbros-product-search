@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 KICKBROS Product Search is a single-file client-side tool for a designer resale/arbitrage
 business. You paste a product link (Dior, Louis Vuitton, Gucci, Moncler, Balenciaga, Goyard,
-Hermès, Prada, Loro Piana), and it finds the matching FR and UK listings, gets both prices, and
-works out what to charge after the French détaxe (tax) refund — cost, sale price, reseller
-price, and profit.
+Hermès, Prada, Loro Piana, Chanel), and it finds the matching FR and UK listings, gets both
+prices, and works out what to charge after the French détaxe (tax) refund — cost, sale price,
+reseller price, and profit.
 
 The entire app is `index.html` — no build step, no dependencies, no package.json. It's a static
 page with inline `<style>` and one `<script>` IIFE, deployed as-is.
@@ -61,11 +61,12 @@ matching UK/FR URL from whichever one the user pasted, plus a `scrapeBlocked` fl
   serialized via `.toString()` and executed remotely inside Apify's sandbox** — it has no access
   to anything in the outer script's closure and must stay fully self-contained (its own regexes,
   no shared helpers).
-- **Blocked brands** (Dior, Louis Vuitton, Prada, Loro Piana) → `showManualMode`. Direct
+- **Blocked brands** (Dior, Louis Vuitton, Prada, Loro Piana, Chanel) → `showManualMode`. Direct
   scraping was tested and confirmed blocked at the network level for Dior/LV — Apify with a
   residential proxy, a plain fetch with browser headers, and a third-party metadata API
-  (microlink.io) all got 403s. Prada and Loro Piana were added later on different evidence per
-  brand (see below) — Loro Piana the same way (plain fetch 403s outright), Prada on a subtler
+  (microlink.io) all got 403s. Prada, Loro Piana, and Chanel were added later on different
+  evidence per brand (see below) — Loro Piana and Chanel the same way as Dior/LV (plain
+  fetch/curl 403s outright on every URL variant tried, confirmed live), Prada on a subtler
   signal: a plain fetch/curl gets the real page fine, but a real headless browser hangs or
   errors on every attempt, consistent with anti-automation blocking that specifically targets
   headless-browser fingerprints (which is what Apify's actor looks like to the site) rather than
@@ -81,12 +82,43 @@ matching UK/FR URL from whichever one the user pasted, plus a `scrapeBlocked` fl
   use, just price/name-only (never touches the image; a missing image is `tryImageFallback`'s
   job, and re-running an image search here could stomp a perfectly good scraped `og:image`).
   Manual-entry is the last resort now, not the first response to an incomplete scrape.
+- **Two-stage Serper price lookup, used by both `trySerperFill` and `trySerperPriceFallback`**:
+  `serperLookup` first tries Google's organic `/search` results (regex-extracting a `£`/`€`
+  amount out of the matched result's title+snippet, as before). Some product pages — seen on
+  certain LV items and on Chanel — are indexed by Google with no price anywhere in the
+  title/snippet text at all, which used to mean a silent "no retail price" with no further
+  attempt. `serperLookup` now falls through to `serperShoppingLookup` (the `/shopping` endpoint)
+  whenever the organic stage found no price: Google Shopping listings carry a structured `price`
+  field sourced from the merchant's product feed rather than scraped text, so it can find a price
+  even when the organic snippet never mentioned one. Queried by product title when the organic
+  stage found one (Shopping's index matches product names far better than an exact page URL),
+  falling back to the raw URL otherwise. Both stages stay inside the same sequential-call
+  discipline described below — the shopping call is awaited before `serperLookup` returns, never
+  fired in parallel with the organic one.
+- **Per-field "still looking" indicator**: while a background price lookup (Serper organic or
+  Shopping) is in flight for a specific side, a small "···" (`.price-dots`, `#frPriceLoading` /
+  `#ukPriceLoading`) shows next to that field, toggled by `setPriceLoading(fieldId, bool)`. It's
+  cleared the moment that attempt ends — found or not — so an empty price field with no dots next
+  to it is the actual signal that every method was tried and none of them found a number, rather
+  than the field just not having been looked up yet. `renderCard` resets both to hidden on every
+  fresh render (new check or reopening an existing catalog entry), since the dots belong to
+  whichever product is currently on screen, not to a stale in-flight lookup for a previous one.
 
 ### Not every brand's UK/FR link pair can be derived from one link
 
 Most `build(url)` functions are a simple locale-segment swap (see Gucci/Moncler/Balenciaga/
 Goyard), sometimes with a locale-specific word fixed up explicitly (LV's `/produits/` vs
-`/products/`). Two brands can't do this at all:
+`/products/`, Chanel's `/gb/fashion/` vs `/fr/mode/`). Chanel joins Prada in the
+canonicalise-on-product-code group — confirmed live via search that the same code
+(`G02819X01000C0204`) resolves under two completely different descriptive slugs per locale
+(`ballet-flats-lambskin` vs `ballerines-agneau-metal`), so a locale swap that leaves the wrong
+locale's slug in place is expected to still resolve. Unlike Prada's `.../p/<slug>/<code>`
+though, Chanel's code comes *before* the slug (`.../p/<code>/<slug>/`), which means the generic
+`getSku` (just the URL's last path segment) would land on the locale-specific slug instead of
+the code — the two locales would then never dedupe to the same catalog row. `BRANDS.chanel` sets
+its own `sku(url)` extractor (regex on `/p/<code>/`) for this reason; `showManualMode` checks for
+a brand-specific `sku` function before falling back to the generic `getSku`. Two brands can't
+derive the UK/FR pair at all:
 
 - **Hermès**: the descriptive URL slug is independently translated per product (e.g.
   `sandales-oran` vs `oran-sandal`) with no shared pattern, and — unlike Prada, which
