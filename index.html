@@ -361,6 +361,8 @@
     transition:background .15s;
   }
   .stub:hover{background:var(--surface-2);}
+  .stub.stub-missing{color:var(--muted-2);pointer-events:none;font-style:italic;}
+  .stub.stub-missing:hover{background:var(--surface);}
 
   .ledger{border-top:1px solid var(--line);padding-top:6px;}
   .ledger-row{
@@ -1689,6 +1691,27 @@
       // mismatched-across-UK/FR) slug instead. Pull the code out explicitly so re-checking the
       // same item from either locale's link still dedupes to the same catalog row.
       sku: url => { const m = url.match(/\/p\/([A-Z0-9]+)\//); return m ? m[1] : null; }
+    },
+    burberry: { name:'Burberry', test: h => h.includes('burberry.com'),
+      // NOT scrapeBlocked — confirmed live: plain curl gets 200/301/302 on every URL variant
+      // tried (no 403 anywhere), and a real Apify run against the UK link returned a genuine
+      // title and a schema.org structuredPrice (£1,995 GBP) with no bot-blocking at all.
+      // Locale is a subdomain (uk./fr., like Loro Piana) — but unlike Loro Piana, confirmed
+      // live that the product code suffix (`-p81047111`) is IDENTICAL across locales and the
+      // site canonicalises on it: pasting the UK slug onto the fr. subdomain unchanged still
+      // 200s and redirects to the correct French slug for the same code (same
+      // canonicalise-on-code, tolerate-mismatched-slug pattern as Prada/Chanel), so a plain
+      // subdomain swap is enough — no need for the Hermès/Loro-Piana "can't derive the pair"
+      // fallback here.
+      build: (url) => ({
+        uk: url.replace(/^https:\/\/fr\.burberry\.com/, 'https://uk.burberry.com'),
+        fr: url.replace(/^https:\/\/uk\.burberry\.com/, 'https://fr.burberry.com')
+      }),
+      // Generic getSku (last path segment) would return the whole slug+code string, which
+      // differs across locales here too (the descriptive words are translated, just like
+      // Chanel) even though the trailing `-p<digits>` code is shared — pull that out explicitly
+      // so a UK and FR check of the same item still dedupe to one catalog row.
+      sku: url => { const m = url.match(/-p(\d+)(?:[\/?#]|$)/i); return m ? 'p' + m[1] : null; }
     }
   };
 
@@ -1826,28 +1849,39 @@
 
   // Runs inside Apify's headless browser, on the actual page — this is what lets us
   // read prices that only appear after the page's own JavaScript has loaded them.
+  // CRITICAL: apify/web-scraper's pageFunction does NOT hand back a Puppeteer `page` object —
+  // confirmed against Apify's own docs and a live run (a `context.page`-based version of this
+  // function 100%-errored on every real invocation with "Cannot read properties of undefined
+  // (reading 'title')", meaning EVERY brand that goes through runApifyScrape was silently
+  // getting zero scrape data, always falling through to whatever the Serper fallback could
+  // find instead). This actor injects pageFunction to run directly inside the browser page
+  // itself, so DOM globals (`document`, `window`) are available straight away — no
+  // `page.evaluate()`/`page.$eval()` wrapping needed or possible. Waiting for content to
+  // settle uses the actor's own `context.waitFor(predicate, opts)` in place of Puppeteer's
+  // `page.waitForFunction`. Re-verified live (Burberry UK/FR, Hermès UK) that this version
+  // actually returns real title/structuredPrice data.
   function pageFunctionSource() {
     return (async function pageFunction(context) {
-      const { request, page } = context;
+      const { request, waitFor } = context;
       try {
-        await page.waitForFunction(
-          () => /[£€]\s?\d/.test(document.body.innerText),
-          { timeout: 9000 }
-        );
+        await waitFor(() => /[£€]\s?\d/.test(document.body.innerText), { timeoutSecs: 9 });
       } catch (e) { /* proceed anyway with whatever loaded */ }
       await new Promise(r => setTimeout(r, 800));
 
-      const title = await page.title().catch(() => null);
+      const title = document.title || null;
       let ogImage = null;
       try {
-        ogImage = await page.$eval('meta[property="og:image"]', el => el.content);
+        const el = document.querySelector('meta[property="og:image"]');
+        ogImage = el ? el.content : null;
       } catch (e) {}
 
       // Structured data (schema.org Product/Offer JSON-LD) is what search engines read —
       // it's far more reliable than scanning visible text, which can match an unrelated
       // price elsewhere on the page (nav, related products, etc).
-      const structured = await page.evaluate(() => {
+      let structured = null;
+      try {
         const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
+        outer:
         for (const s of scripts) {
           try {
             const data = JSON.parse(s.textContent);
@@ -1859,16 +1893,16 @@
                 if (!offers) continue;
                 const offer = Array.isArray(offers) ? offers[0] : offers;
                 if (offer && offer.price != null) {
-                  return { price: String(offer.price), currency: offer.priceCurrency || null };
+                  structured = { price: String(offer.price), currency: offer.priceCurrency || null };
+                  break outer;
                 }
               }
             }
           } catch (e) {}
         }
-        return null;
-      }).catch(() => null);
+      } catch (e) {}
 
-      const bodyText = await page.evaluate(() => document.body.innerText).catch(() => '');
+      const bodyText = document.body.innerText || '';
       const blocked = bodyText.length < 500 && /access denied|are you a human|verify you|captcha|request blocked|robot check/i.test(bodyText);
       // French formatting uses a space as the thousands separator (e.g. "1 090,00 €"),
       // so the digit run has to allow embedded spaces, not just commas/dots.
@@ -3970,6 +4004,12 @@
     el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
     el('frLink').href = frUrl || '#';
     el('ukLink').href = ukUrl || '#';
+    // A blank side (pairing couldn't be resolved — see startCheckFromUrl) gets a visibly
+    // inert stub instead of a dead "FR listing ↗" that looks clickable but goes nowhere.
+    el('frLink').textContent = frUrl ? 'FR listing ↗' : 'FR listing — paste below';
+    el('frLink').classList.toggle('stub-missing', !frUrl);
+    el('ukLink').textContent = ukUrl ? 'UK listing ↗' : 'UK listing — paste below';
+    el('ukLink').classList.toggle('stub-missing', !ukUrl);
     el('frPrice').value = frPrice != null ? frPrice : '';
     el('ukPrice').value = ukPrice != null ? ukPrice : '';
     el('rateVal').textContent = rate ? ('1 € = £' + rate.toFixed(4)) : '—';
@@ -4073,13 +4113,33 @@
     return a === b || a.endsWith('.' + b) || b.endsWith('.' + a);
   }
 
+  // Strips accents/case for a loose textual match — used to compare a Shopping result's
+  // merchant name against a brand label (e.g. "Hermès" vs a listing's "Hermes"). Named
+  // separately from the unrelated normalizeForMatch() used by client duplicate-detection,
+  // which strips punctuation/spacing instead — different jobs, not interchangeable.
+  function normalizeBrandName(s) {
+    return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  }
+
   // Second price-lookup method, used when the organic search below doesn't turn up a price.
   // Google Shopping carries its own structured `price` field per listing — set from the
   // merchant's product feed, not scraped from a snippet — so it finds a price on pages whose
-  // indexed title/snippet text never mentions one at all (seen on some LV and Chanel product
-  // pages). Queried by product title when we have one (Shopping's index matches product names
-  // far better than an exact page URL); falls back to the URL itself when we don't.
-  async function serperShoppingLookup(query, token, isFr, targetHostname) {
+  // indexed title/snippet text never mentions one at all (confirmed live on Prada — the exact
+  // product page's organic snippet has no price string anywhere, but Shopping does). Queried by
+  // product title when we have one (Shopping's index matches product names far better than an
+  // exact page URL); falls back to the URL itself when we don't.
+  //
+  // Verification here can't reuse sameSite/hostname matching: confirmed live that every
+  // Shopping result's `link` is a Google-internal redirect
+  // (`google.com/search?ibp=oshop&...`), never the merchant's actual URL, for every brand
+  // tested. Serper does label each result with a `source` field (the merchant name as Google
+  // understands it, e.g. "Prada", "Loro Piana S.p.A.") — that's the only thing here that can
+  // play the same "is this actually the real store" role, so price is only trusted from a
+  // listing whose source is a reasonable match for the brand name. Confirmed live that this
+  // correctly finds nothing for some items (e.g. a Chanel shoe with no Chanel-sourced Shopping
+  // listing at all, only resellers) — that's the intended outcome, not a bug: no verified
+  // listing means no price, never a reseller's possibly-different price passed off as one.
+  async function serperShoppingLookup(query, token, isFr, brandLabel) {
     const res = await fetch('https://google.serper.dev/shopping', {
       method: 'POST',
       headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
@@ -4089,58 +4149,144 @@
     const data = await res.json();
     const items = (data && data.shopping) || [];
     if (!items.length) return null;
-    // Only ever trust a price that's actually attributed to the brand's own site — a Shopping
-    // listing from some other seller can (and does) list a different price for a different
-    // variant/condition, so it's not a stand-in for "the retail price" just because it ranked
-    // first. No listing on the real site among the results means no price, not a guess.
-    const top = items.find(it => { try { return sameSite(new URL(it.link).hostname, targetHostname); } catch (e) { return false; } });
+    const wanted = normalizeBrandName(brandLabel);
+    const top = items.find(it => {
+      const src = normalizeBrandName(it.source);
+      return !!src && (src === wanted || src.includes(wanted) || wanted.includes(src));
+    });
     return top ? { title: top.title || null, price: top.price || null } : null;
   }
 
-  async function serperLookup(url, token, targetHostname) {
+  // Runs one Google organic search via Serper and returns the raw `organic` array.
+  async function serperOrganicSearch(query, token, isFr, num) {
+    const res = await fetch('https://google.serper.dev/search', {
+      method: 'POST',
+      headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: query, num, gl: isFr ? 'fr' : 'gb', hl: isFr ? 'fr' : 'en' })
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data && data.organic) || [];
+  }
+
+  async function serperLookup(url, token, targetHostname, brandLabel) {
     // gl/hl locale hints matter here: Google's "exact URL as query" ranking is noticeably more
     // forgiving for English/UK content than French, so an FR lookup without them is more likely
     // to surface a weak/unrelated top result than the UK lookup does with the same technique.
     const isFr = /\bfr[-_.]|\/fr\//i.test(url);
-    const res = await fetch('https://google.serper.dev/search', {
-      method: 'POST',
-      headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ q: url, num: 5, gl: isFr ? 'fr' : 'gb', hl: isFr ? 'fr' : 'en' })
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const results = (data && data.organic) || [];
+    const codeHint = getSku(url);
     // A result only ever gets its price/title trusted if it's actually on the brand's own site
-    // (or a genuine subdomain of it) — never an off-domain "looks like a product page" result,
-    // and never just whatever Google ranked first. An unverified third-party page (reseller,
-    // lookalike, aggregator) can carry a completely different price for what only looks like
-    // the same item, which is a worse outcome than finding nothing. But a same-domain match
-    // isn't automatically the right *page* either: when Google hasn't indexed the exact product
-    // URL well, the only same-domain result it has can be the brand's homepage or a category
-    // page — a real product page has a deep path (product code/slug), a homepage doesn't, so
-    // prefer a same-domain match that actually looks like one over the first same-domain match.
+    // (or a genuine subdomain of it) — never an off-domain result, and never just whatever
+    // Google ranked first. An unverified third-party page (reseller, lookalike, aggregator) can
+    // carry a completely different price for what only looks like the same item, which is a
+    // worse outcome than finding nothing.
+    //
+    // Same-domain isn't automatically the right *page* either — the strongest signal that a
+    // same-domain result is genuinely OUR product (not the brand's homepage, a category page, or
+    // an unrelated product) is that its own URL contains our product's identifying code.
+    // Confirmed live (Dior): a generic "path is long enough" heuristic isn't nearly enough on its
+    // own — a customer-service contact page's URL is "long enough" too and isn't remotely the
+    // right page, and a text query like "<code> <brand>" can rank a completely different,
+    // unrelated same-brand product above the actual target. Only fall back to the path-length
+    // guess when there's no code to check against at all (rare — codeHint is null).
     const looksLikeProductPage = link => { try { return new URL(link).pathname.replace(/\/+$/, '').length > 15; } catch (e) { return false; } };
-    const hostMatches = targetHostname
-      ? results.filter(r => { try { return sameSite(new URL(r.link).hostname, targetHostname); } catch (e) { return false; } })
-      : [];
-    // A same-domain result that looks like a real product page (best) → any same-domain match
-    // anyway, shallow or not (still the right site, better than nothing) → nothing at all if
-    // Google simply never indexed the actual site for this query.
-    const top = hostMatches.find(looksLikeProductPage) || hostMatches[0] || null;
-    const text = top ? [top.title, top.snippet].filter(Boolean).join(' ') : '';
-    const gbpMatch = text.match(/£\s?\d(?:[\d,.\s]*\d)?/);
-    const eurMatch = text.match(/€\s?\d(?:[\d,.\s]*\d)?|\d(?:[\d,.\s]*\d)?\s?€/);
-    let title = top ? (top.title || null) : null;
-    let gbpPrice = gbpMatch ? gbpMatch[0] : null;
-    let eurPrice = eurMatch ? eurMatch[0] : null;
+    const isOurProductPage = link => codeHint ? link.includes(codeHint) : looksLikeProductPage(link);
+    // Returns { productPage, shallow } rather than a single winner — keeping them separate lets
+    // the caller prefer a *different query's* product-page match over *this* query's shallow
+    // one, instead of only ever comparing within one query's own results.
+    const pickCandidates = results => {
+      const hostMatches = targetHostname
+        ? results.filter(r => { try { return sameSite(new URL(r.link).hostname, targetHostname); } catch (e) { return false; } })
+        : [];
+      return { productPage: hostMatches.find(r => isOurProductPage(r.link)) || null, shallow: hostMatches[0] || null };
+    };
+    const extractFromText = r => {
+      const text = r ? [r.title, r.snippet].filter(Boolean).join(' ') : '';
+      const gbpMatch = text.match(/£\s?\d(?:[\d,.\s]*\d)?/);
+      const eurMatch = text.match(/€\s?\d(?:[\d,.\s]*\d)?|\d(?:[\d,.\s]*\d)?\s?€/);
+      return {
+        title: r ? (r.title || null) : null,
+        gbpPrice: gbpMatch ? gbpMatch[0] : null,
+        eurPrice: eurMatch ? eurMatch[0] : null
+      };
+    };
 
-    if (!gbpPrice && !eurPrice) {
-      const shop = await serperShoppingLookup(title || url, token, isFr, targetHostname).catch(err => { console.error('serperShoppingLookup', err); return null; });
+    const results1 = await serperOrganicSearch(url, token, isFr, 5);
+    const p1 = pickCandidates(results1);
+    // Everything below extracts title/price from ONE chosen result, never mixed across two —
+    // stitching a title from one candidate and a price from a different one used to let a bad
+    // match's title (e.g. Dior's own homepage, once the only same-domain result) survive
+    // alongside a price pulled from some other, unrelated candidate. `top` is that single
+    // winner; `isConfirmedProductPage` tracks whether it actually earned that or is just the
+    // best of a bad lot.
+    let top = p1.productPage;
+
+    // The "<product code> <brand name>" retry query — cached so it's only ever fetched once
+    // per lookup even if both branches below end up wanting it.
+    let secondary = null, secondaryFetched = false;
+    async function getSecondary() {
+      if (secondaryFetched) return secondary;
+      secondaryFetched = true;
+      if (codeHint && brandLabel) {
+        const results2 = await serperOrganicSearch(codeHint + ' ' + brandLabel, token, isFr, 10).catch(() => []);
+        secondary = pickCandidates(results2);
+      }
+      return secondary;
+    }
+
+    // The exact URL as a search query doesn't always find what Google has actually indexed:
+    // confirmed live on Dior, where the URL-as-query search surfaced nothing but homepage/
+    // category pages (no real product page at all, even same-domain), while a "<product code>
+    // <brand name>" text query found the exact right page — so when the primary query didn't
+    // land on a real (code-verified) product page, retry with that alternate query and prefer
+    // whichever query actually found one, before settling for a shallow match.
+    if (!top) {
+      const p2 = await getSecondary();
+      top = (p2 && p2.productPage) || p1.shallow || (p2 && p2.shallow) || null;
+    }
+
+    const isConfirmedProductPage = !!(top && isOurProductPage(top.link));
+    let { title, gbpPrice, eurPrice } = extractFromText(top);
+
+    // Even when the URL query DOES find the right page, the specific snippet variant Google
+    // returns for that exact query can happen to omit the price — confirmed live on Hermès,
+    // where the URL query found the correct page with no price in its snippet, but the
+    // code+brand query found the identical page WITH the price included. Only retry for a
+    // missing price once we already trust `top` as the real page, and only take the retry's
+    // price from a candidate that's ALSO code-verified (`productPage`, never the unverified
+    // `shallow`) — otherwise a different, unrelated product's price could get attached to this
+    // one just because nothing code-verified turned up.
+    if (isConfirmedProductPage && !gbpPrice && !eurPrice) {
+      const p2 = await getSecondary();
+      if (p2 && p2.productPage) {
+        const retry = extractFromText(p2.productPage);
+        gbpPrice = retry.gbpPrice;
+        eurPrice = retry.eurPrice;
+      }
+    }
+
+    // Shopping is only ever queried using a name we actually trust — a confirmed real product
+    // page's title, or (if organic found nothing at all, anywhere) the raw URL. Querying
+    // Shopping with a shallow/homepage match's title (all "top" can be when it isn't a
+    // confirmed product page) risks a false "source === brand" match against a completely
+    // unrelated product with a similar-sounding name, silently attaching a real but WRONG
+    // price — confirmed live: this is exactly what happened for Dior before this fix (the
+    // homepage's marketing title matched some unrelated Dior product on Shopping). No confirmed
+    // product page and no price found from organic search is the tolerated "couldn't find it"
+    // outcome, not something to paper over with a guess.
+    if (!gbpPrice && !eurPrice && (isConfirmedProductPage || !top)) {
+      const shop = await serperShoppingLookup(isConfirmedProductPage ? title : url, token, isFr, brandLabel).catch(err => { console.error('serperShoppingLookup', err); return null; });
       if (shop) {
-        title = title || shop.title;
+        if (isConfirmedProductPage) title = title || shop.title;
         if (shop.price) { if (isFr) eurPrice = shop.price; else gbpPrice = shop.price; }
       }
     }
+
+    // A title from an unconfirmed match (a homepage, a category page) is exactly the kind of
+    // plausible-but-wrong text that used to fill #prodName with "DIOR - US Official Online
+    // Boutique | Fashion and beauty ..." — cleanTitle's brand-name-only check doesn't catch a
+    // longer marketing string like that, so it's dropped here at the source instead.
+    if (!isConfirmedProductPage) title = null;
 
     if (!title && !gbpPrice && !eurPrice) return null;
     return { title, gbpPrice, eurPrice };
@@ -4235,23 +4381,32 @@
     }
 
     try {
-      if (current.catalogId === id && !el('ukPrice').value) setPriceLoading('ukPrice', true);
-      const ukInfo = await serperLookup(ukUrl, token, new URL(ukUrl).hostname).catch(err => { console.error('serperLookup (UK)', id, err); return null; });
-      applyName(ukInfo && ukInfo.title);
-      applyPrice('ukPrice', ukInfo ? parseMoney(ukInfo.gbpPrice) : null);
-      if (current.catalogId === id) { setPriceLoading('ukPrice', false); recalc(); }
+      // ukUrl/frUrl can legitimately be empty here — a brand whose UK/FR pair couldn't be
+      // derived (Hermès, Loro Piana) still shows a card for whichever single locale link the
+      // user actually pasted, with the other side left blank for manual entry (see
+      // startCheckFromUrl). There's nothing to look up for an empty URL, so skip it outright
+      // rather than letting `new URL('')` throw and abort the rest of this function.
+      if (ukUrl) {
+        if (current.catalogId === id && !el('ukPrice').value) setPriceLoading('ukPrice', true);
+        const ukInfo = await serperLookup(ukUrl, token, new URL(ukUrl).hostname, brandLabel).catch(err => { console.error('serperLookup (UK)', id, err); return null; });
+        applyName(ukInfo && ukInfo.title);
+        applyPrice('ukPrice', ukInfo ? parseMoney(ukInfo.gbpPrice) : null);
+        if (current.catalogId === id) { setPriceLoading('ukPrice', false); recalc(); }
+      }
 
-      if (current.catalogId === id && !el('frPrice').value) setPriceLoading('frPrice', true);
-      const frInfo = await serperLookup(frUrl, token, new URL(frUrl).hostname).catch(err => { console.error('serperLookup (FR)', id, err); return null; });
-      applyName(frInfo && frInfo.title);
-      applyPrice('frPrice', frInfo ? parseMoney(frInfo.eurPrice) : null);
-      if (current.catalogId === id) { setPriceLoading('frPrice', false); recalc(); }
+      if (frUrl) {
+        if (current.catalogId === id && !el('frPrice').value) setPriceLoading('frPrice', true);
+        const frInfo = await serperLookup(frUrl, token, new URL(frUrl).hostname, brandLabel).catch(err => { console.error('serperLookup (FR)', id, err); return null; });
+        applyName(frInfo && frInfo.title);
+        applyPrice('frPrice', frInfo ? parseMoney(frInfo.eurPrice) : null);
+        if (current.catalogId === id) { setPriceLoading('frPrice', false); recalc(); }
+      }
 
       // Unlike name/price above, the image is never derived from what's currently in the DOM,
       // so it doesn't need to stay on-screen to be valid — persist it to row `id` regardless of
       // what the user has since navigated to (see tryImageFallback for the same pattern).
-      let img = await serperImageSearch(ukUrl, token).catch(err => { console.error('serperImageSearch (UK)', id, err); return null; });
-      if (!img) img = await serperImageSearch(frUrl, token).catch(err => { console.error('serperImageSearch (FR)', id, err); return null; });
+      let img = ukUrl ? await serperImageSearch(ukUrl, token).catch(err => { console.error('serperImageSearch (UK)', id, err); return null; }) : null;
+      if (!img && frUrl) img = await serperImageSearch(frUrl, token).catch(err => { console.error('serperImageSearch (FR)', id, err); return null; });
       if (img) {
         updateCatalogEntry(id, { image_url: img });
         if (current.catalogId === id) {
@@ -4332,14 +4487,14 @@
     try {
       if (needUk) {
         if (current.catalogId === id) setPriceLoading('ukPrice', true);
-        const ukInfo = await serperLookup(ukUrl, token, new URL(ukUrl).hostname).catch(err => { console.error('serperLookup (UK)', id, err); return null; });
+        const ukInfo = await serperLookup(ukUrl, token, new URL(ukUrl).hostname, brandLabel).catch(err => { console.error('serperLookup (UK)', id, err); return null; });
         applyName(ukInfo && ukInfo.title);
         applyPrice('ukPrice', ukInfo ? parseMoney(ukInfo.gbpPrice) : null);
         if (current.catalogId === id) { setPriceLoading('ukPrice', false); recalc(); }
       }
       if (needFr) {
         if (current.catalogId === id) setPriceLoading('frPrice', true);
-        const frInfo = await serperLookup(frUrl, token, new URL(frUrl).hostname).catch(err => { console.error('serperLookup (FR)', id, err); return null; });
+        const frInfo = await serperLookup(frUrl, token, new URL(frUrl).hostname, brandLabel).catch(err => { console.error('serperLookup (FR)', id, err); return null; });
         applyName(frInfo && frInfo.title);
         applyPrice('frPrice', frInfo ? parseMoney(frInfo.eurPrice) : null);
         if (current.catalogId === id) { setPriceLoading('frPrice', false); recalc(); }
@@ -4383,6 +4538,12 @@
     const initialUkPrice = existing ? existing.uk_retail : (cached ? cached.ukPrice : null);
     const initialFrPrice = existing ? existing.eu_retail : (cached ? cached.frPrice : null);
     const initialImage = existing ? (existing.image_url || null) : null;
+    // ukUrl/frUrl can arrive blank when the caller couldn't resolve the other locale's link
+    // this time round (see startCheckFromUrl) — if this exact item already has that side on
+    // file from a previous check, use the one we already know rather than showing a "needs
+    // manual entry" state for something that isn't actually missing.
+    ukUrl = ukUrl || (existing && existing.url_uk) || '';
+    frUrl = frUrl || (existing && existing.url_fr) || '';
 
     if (existing) {
       current.nameSource = existing.product_name ? 'user' : (guessedName ? 'guess' : null);
@@ -4401,7 +4562,11 @@
     el('frPrice').placeholder = 'tap here';
     el('ukPrice').placeholder = 'tap here';
     renderStatusPill(el('statusBtn'), (existing && existing.status) || 'stock');
-    setStatus('');
+    // ukUrl/frUrl are the effective values (after the existing-catalog fallback above), so
+    // this only actually flags a side as missing when we truly don't have a link for it yet —
+    // not just because this particular check attempt didn't re-resolve one we already had.
+    const missingSide = !ukUrl ? 'UK' : (!frUrl ? 'FR' : null);
+    setStatus(missingSide ? ('Couldn’t find the ' + missingSide + ' listing automatically — paste it below to complete this entry.') : '', !!missingSide);
     let focusTarget = null;
     if (!initialName) focusTarget = 'prodName';
     else if (initialUkPrice == null && initialFrPrice == null) focusTarget = 'frPrice';
@@ -4438,7 +4603,7 @@
     }
   }
 
-  async function runCheck(ukUrl, frUrl, brandLabel) {
+  async function runCheck(ukUrl, frUrl, brandLabel, brandKey) {
     const token = el('setApifyToken').value.trim();
     if (!token) {
       setStatus('Add your Apify API token in Settings first.', true);
@@ -4448,7 +4613,10 @@
     resetCardMode();
     checkBtn.disabled = true; manualCheckBtn.disabled = true;
     setStatus('Scraping both listings — this can take up to a minute…');
-    const sku = getSku(ukUrl) || getSku(frUrl);
+    // A brand can supply its own sku extractor (see Chanel/Burberry) when the generic "last
+    // path segment" doesn't land on the actual product code — same override showManualMode uses.
+    const skuOf = (BRANDS[brandKey] && BRANDS[brandKey].sku) || getSku;
+    const sku = skuOf(ukUrl) || skuOf(frUrl);
     try {
       const [info, rate, existing] = await Promise.all([
         extractInfo(ukUrl, frUrl, token).catch(err => ({
@@ -4540,22 +4708,37 @@
           const ukUrl = otherLocale === 'uk' ? found : raw;
           const frUrl = otherLocale === 'fr' ? found : raw;
           if (brand.scrapeBlocked) showManualMode(ukUrl, frUrl, brand.name, brandKey, null);
-          else runCheck(ukUrl, frUrl, brand.name);
+          else runCheck(ukUrl, frUrl, brand.name, brandKey);
           return;
         }
       }
-      setStatus('Could not work out the FR/UK pair from this link — paste the other one below.', true);
-      // Pre-fill whichever side we could confidently identify rather than making the user
-      // re-paste the link they already gave us.
+      // Couldn't resolve the pair automatically. Resolving the UK/FR pair and finding a
+      // name/price/image for the single link that WAS pasted are two separate problems —
+      // failure of the first must never block the second (confirmed live: Serper finds a real
+      // name and often a price from just this one link, even when it can't find the other
+      // locale's link at all). Show whatever that single side can tell us immediately via the
+      // same showManualMode/Serper path any other manual-mode brand uses, with the other side
+      // left genuinely blank for manual entry — never duplicated into both fields, which would
+      // make "the FR price" just re-find the UK page's price under a different label.
       if (locale) {
-        manualUk.value = locale === 'uk' ? raw : '';
-        manualFr.value = locale === 'fr' ? raw : '';
+        const ukUrl = locale === 'uk' ? raw : '';
+        const frUrl = locale === 'fr' ? raw : '';
+        manualUk.value = ukUrl;
+        manualFr.value = frUrl;
+        manualPanel.classList.add('open');
+        // showManualMode sets its own "couldn't find the X listing" status once it knows the
+        // final picture (it may find the missing side was already on file from a previous
+        // check, in which case there's nothing actually missing to report).
+        showManualMode(ukUrl, frUrl, brand.name, brandKey, null);
+        return;
       }
+      // Couldn't even tell which locale the pasted link is, so there's nothing safe to show yet.
+      setStatus('Could not work out the FR/UK pair from this link — paste both below.', true);
       manualPanel.classList.add('open');
       return;
     }
     if (brand.scrapeBlocked) showManualMode(uk, fr, brand.name, brandKey, brandKey === 'lv' ? guessLvName(raw) : null);
-    else runCheck(uk, fr, brand.name);
+    else runCheck(uk, fr, brand.name, brandKey);
   }
 
   checkBtn.addEventListener('click', () => startCheckFromUrl(urlInput.value.trim()));
@@ -4568,7 +4751,7 @@
     let brandLabel = 'Manual entry', scrapeBlocked = false, brandKey = null;
     try { const h = new URL(uk).hostname; const bk = Object.keys(BRANDS).find(k => BRANDS[k].test(h)); if (bk) { brandLabel = BRANDS[bk].name; scrapeBlocked = !!BRANDS[bk].scrapeBlocked; brandKey = bk; } } catch(e){}
     if (scrapeBlocked) showManualMode(uk, fr, brandLabel, brandKey, brandKey === 'lv' ? guessLvName(uk) : null);
-    else runCheck(uk, fr, brandLabel);
+    else runCheck(uk, fr, brandLabel, brandKey);
   });
 
   el('refreshRate').addEventListener('click', async () => {

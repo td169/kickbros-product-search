@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 KICKBROS Product Search is a single-file client-side tool for a designer resale/arbitrage
 business. You paste a product link (Dior, Louis Vuitton, Gucci, Moncler, Balenciaga, Goyard,
-Hermès, Prada, Loro Piana, Chanel), and it finds the matching FR and UK listings, gets both
-prices, and works out what to charge after the French détaxe (tax) refund — cost, sale price,
-reseller price, and profit.
+Hermès, Prada, Loro Piana, Chanel, Burberry), and it finds the matching FR and UK listings, gets
+both prices, and works out what to charge after the French détaxe (tax) refund — cost, sale
+price, reseller price, and profit.
 
 The entire app is `index.html` — no build step, no dependencies, no package.json. It's a static
 page with inline `<style>` and one `<script>` IIFE, deployed as-is.
@@ -55,12 +55,22 @@ happened to click some other tab first, incidentally setting the attribute as a 
 `BRANDS` (top of the script) maps each domain to a `build(url)` function that derives the
 matching UK/FR URL from whichever one the user pasted, plus a `scrapeBlocked` flag.
 
-- **Non-blocked brands** (Gucci, Moncler, Balenciaga, Goyard, Hermès) → `runCheck` → `extractInfo` →
-  `runApifyScrape`, which POSTs a `pageFunction` to Apify's `web-scraper` actor (user's own
-  token) to run a real headless browser against both URLs. **`pageFunctionSource()` is
-  serialized via `.toString()` and executed remotely inside Apify's sandbox** — it has no access
-  to anything in the outer script's closure and must stay fully self-contained (its own regexes,
-  no shared helpers).
+- **Non-blocked brands** (Gucci, Moncler, Balenciaga, Goyard, Hermès, Burberry) → `runCheck` →
+  `extractInfo` → `runApifyScrape`, which POSTs a `pageFunction` to Apify's `web-scraper` actor
+  (user's own token). **`pageFunctionSource()` is serialized via `.toString()` and executed
+  remotely inside Apify's sandbox** — it has no access to anything in the outer script's closure
+  and must stay fully self-contained (its own regexes, no shared helpers).
+  **`context.page` is NOT a real Puppeteer/Playwright page object for this actor — confirmed
+  against Apify's own docs and a live run.** An earlier version of `pageFunctionSource()` used
+  `context.page.title()`/`context.page.$eval()`/`context.page.evaluate()`, all of which threw
+  "Cannot read properties of undefined (reading 'title')" on every single real invocation —
+  meaning `runApifyScrape` silently failed for every non-blocked brand, always falling straight
+  through to whatever `trySerperPriceFallback` could separately find instead, with the scrape
+  itself contributing nothing. This actor runs `pageFunction` directly inside the browser page,
+  so DOM globals (`document`, `window`) are used straight away, and waiting for content to settle
+  uses the actor's own `context.waitFor(predicate, { timeoutSecs })` in place of Puppeteer's
+  `page.waitForFunction`. Re-verified live (Burberry UK/FR, Hermès UK — real `structuredPrice`
+  from each page's schema.org JSON-LD) that the corrected version actually returns real data.
 - **Blocked brands** (Dior, Louis Vuitton, Prada, Loro Piana, Chanel) → `showManualMode`. Direct
   scraping was tested and confirmed blocked at the network level for Dior/LV — Apify with a
   residential proxy, a plain fetch with browser headers, and a third-party metadata API
@@ -82,19 +92,55 @@ matching UK/FR URL from whichever one the user pasted, plus a `scrapeBlocked` fl
   use, just price/name-only (never touches the image; a missing image is `tryImageFallback`'s
   job, and re-running an image search here could stomp a perfectly good scraped `og:image`).
   Manual-entry is the last resort now, not the first response to an incomplete scrape.
-- **Two-stage Serper price lookup, used by both `trySerperFill` and `trySerperPriceFallback`**:
-  `serperLookup` first tries Google's organic `/search` results (regex-extracting a `£`/`€`
-  amount out of the matched result's title+snippet, as before). Some product pages — seen on
-  certain LV items and on Chanel — are indexed by Google with no price anywhere in the
-  title/snippet text at all, which used to mean a silent "no retail price" with no further
-  attempt. `serperLookup` now falls through to `serperShoppingLookup` (the `/shopping` endpoint)
-  whenever the organic stage found no price: Google Shopping listings carry a structured `price`
-  field sourced from the merchant's product feed rather than scraped text, so it can find a price
-  even when the organic snippet never mentioned one. Queried by product title when the organic
-  stage found one (Shopping's index matches product names far better than an exact page URL),
-  falling back to the raw URL otherwise. Both stages stay inside the same sequential-call
-  discipline described below — the shopping call is awaited before `serperLookup` returns, never
-  fired in parallel with the organic one.
+- **`runCheck`/`showManualMode` can both use a brand-specific `sku(url)` extractor** (see
+  Chanel/Burberry below) instead of the generic `getSku` — `runCheck` now takes a `brandKey`
+  parameter for exactly this (previously it only had `brandLabel`, which isn't enough to look up
+  `BRANDS[brandKey].sku`).
+- **Multi-stage, code-anchored Serper price/name lookup, used by both `trySerperFill` and
+  `trySerperPriceFallback`**: `serperLookup` tries Google's organic `/search` results first
+  (regex-extracting a `£`/`€` amount out of the matched result's title+snippet), then a
+  `"<product code> <brand name>"` text-query retry if the URL-as-query search didn't land on a
+  verified product page, then `serperShoppingLookup` (the `/shopping` endpoint) if organic still
+  found no price. All three stages run strictly sequentially — see the "never concurrently" rule
+  below.
+  - **A same-domain result is never trusted just because it "looks like a product page."** The
+    old heuristic (`pathname.length > 15`) matched a Dior *customer-service contact page* just as
+    happily as the real product — confirmed live. `isOurProductPage(link)` now requires the
+    candidate's own URL to actually contain `getSku(url)` (the product code) whenever one exists,
+    which is far more specific; the path-length heuristic only survives as a fallback for the rare
+    case where there's no code to check against at all.
+  - **The exact URL as a search query doesn't always find what Google has actually indexed** —
+    confirmed live on Dior, where the URL-as-query search surfaced nothing but homepage/category
+    pages (no real product page at all, even same-domain) for one specific item, while a
+    `"<product code> <brand name>"` text query found the exact right page. But that retry query
+    has its own failure mode: it can rank a *different, unrelated same-brand product* above the
+    actual target (confirmed live: Google's top same-domain result for `"<code> Dior"` was a
+    different product's page entirely) — so its candidates are filtered to ones whose own URL
+    contains the searched-for code before being considered at all, same principle as above.
+  - **Title and price are always extracted from the same single winning result, never stitched
+    across two different candidates.** An earlier version picked title from one query's result and
+    price from another's independently — which let a bad match's title (Dior's own homepage)
+    survive next to a price pulled from a completely different, unrelated candidate. Confirmed
+    live that this combination produced a real-but-wrong price for the wrong product.
+  - **Shopping is only ever queried using a name pulled from a *confirmed* product page** (i.e.
+    `isOurProductPage` was true for it), or the raw URL if organic found nothing at all anywhere.
+    Querying Shopping with an unconfirmed match's title (a homepage, a category page) risks a
+    false "this merchant name looks like the brand" match against a completely unrelated product
+    with a similar-sounding name — confirmed live: this is exactly how Dior briefly produced a
+    real-but-wrong price for the wrong product, before this was fixed to require a confirmed page.
+  - **Some product pages are indexed by Google with no price anywhere in the organic
+    title/snippet text at all** (seen on certain LV items and on Prada) — Shopping's structured
+    `price` field (sourced from the merchant's own feed, not scraped text) can still find one.
+  - Verifying a Shopping result can't reuse hostname matching at all: confirmed live that every
+    Shopping result's `link` is a Google-internal redirect (`google.com/search?ibp=oshop&...`),
+    never the merchant's actual URL, for every brand tested. Serper does label each result with a
+    `source` field (the merchant name as Google understands it, e.g. `"Prada"`,
+    `"Loro Piana S.p.A."`) — `serperShoppingLookup` matches that against the brand label instead
+    (via `normalizeBrandName`, which strips accents/case — distinct from the unrelated
+    `normalizeForMatch` used by client duplicate-detection). Confirmed live that this correctly
+    finds **nothing** for some items (e.g. a Chanel shoe with no Chanel-sourced Shopping listing
+    at all, only resellers) — that's the intended outcome, not a bug: no verified listing means no
+    price, never a reseller's possibly-different price passed off as one.
 - **Per-field "still looking" indicator**: while a background price lookup (Serper organic or
   Shopping) is in flight for a specific side, a small "···" (`.price-dots`, `#frPriceLoading` /
   `#ukPriceLoading`) shows next to that field, toggled by `setPriceLoading(fieldId, bool)`. It's
@@ -116,9 +162,23 @@ locale's slug in place is expected to still resolve. Unlike Prada's `.../p/<slug
 though, Chanel's code comes *before* the slug (`.../p/<code>/<slug>/`), which means the generic
 `getSku` (just the URL's last path segment) would land on the locale-specific slug instead of
 the code — the two locales would then never dedupe to the same catalog row. `BRANDS.chanel` sets
-its own `sku(url)` extractor (regex on `/p/<code>/`) for this reason; `showManualMode` checks for
-a brand-specific `sku` function before falling back to the generic `getSku`. Two brands can't
-derive the UK/FR pair at all:
+its own `sku(url)` extractor (regex on `/p/<code>/`) for this reason; `showManualMode`/`runCheck`
+both check for a brand-specific `sku` function before falling back to the generic `getSku`.
+
+**Burberry** is a subdomain-locale brand (`uk.`/`fr.`, like Loro Piana) but — confirmed live via
+curl — unlike Loro Piana, the trailing product code (`-p81047111`) IS shared across locales; only
+the descriptive slug before it is translated (`long-castleford-trench-coat-p81047111` vs
+`trench-long-castleford-p81047111`). Confirmed live that pasting the UK slug onto the `fr.`
+subdomain unchanged still 200s and redirects to the correct French slug for the same code — same
+canonicalise-on-code, tolerate-mismatched-slug pattern as Prada/Chanel — so `build(url)` is a
+plain subdomain swap, no `findOtherLocaleLink` fallback needed. It also needs its own `sku(url)`
+extractor for the same reason as Chanel (the shared code is a suffix, not the whole last path
+segment) — and since Burberry is **not** `scrapeBlocked` (confirmed live: no 403s at the network
+level, and a real Apify run returns a genuine `structuredPrice` on both locales), this is the
+first brand where the `sku` override actually needs to be threaded through `runCheck`, not just
+`showManualMode` — see `runCheck`'s new `brandKey` parameter above.
+
+Two brands can't derive the UK/FR pair at all:
 
 - **Hermès**: the descriptive URL slug is independently translated per product (e.g.
   `sandales-oran` vs `oran-sandal`) with no shared pattern, and — unlike Prada, which
@@ -139,14 +199,30 @@ bespoke UI, these two brands just trigger it, but only as a last resort now:
   (organic first, then Shopping/sponsored listings) for one on the same site matching the
   *other* locale's `localePatterns` entry. If found, the pair is complete and it proceeds
   straight into `runCheck`/`showManualMode` — no user input needed at all.
-- Only if that comes back empty (no Serper token set, or genuinely no matching result) does it
-  fall back to prompting the user, pre-filling whichever manual field matches the locale
-  actually pasted (via `detectLocale`, built from the same `localePatterns`) rather than making
-  them re-type the link they already gave.
+- **If that comes back empty (no Serper token set, or genuinely no matching result — confirmed
+  live this does happen, e.g. Google's top 10 results for a Hermès product's exact URL contained
+  only that one page itself, no FR equivalent at all), the app used to show *nothing***: an empty
+  manual-paste panel with no card, even though Serper could clearly still find a real name and
+  often a price from the single link that WAS pasted. Resolving the UK/FR pair and finding
+  name/price/image for that one link are two separate problems, and failure of the first must
+  never block the second. Now: whichever locale `detectLocale` recognises gets `showManualMode`
+  called immediately with that side's real URL and the other side left as `''` (never duplicated
+  into both — that would make "the FR price" just re-find the UK page's price under a different
+  label) — showing whatever Serper can find right away, with the missing side visibly marked
+  (`.stub-missing` on its link stub, an empty always-editable price field) rather than hidden.
+  `manualUk`/`manualFr` are still pre-filled and the panel still opens, so pasting the missing
+  link later completes the *same* catalog row (`findExistingBySku` matches on the known side,
+  which never changes across that transition) instead of creating a duplicate.
+  - `showManualMode` itself also checks whether an *existing* catalog row already has the side
+    that's blank this time (`ukUrl = ukUrl || (existing && existing.url_uk) || ''`, same for FR) —
+    a transient `findOtherLocaleLink` failure on a re-check must not regress an item that already
+    had both links on file back into "needs manual entry."
+  - Only when `detectLocale` can't even tell which locale the pasted link itself is does the app
+    fall back to the fully-blank manual panel, since there's nothing safe to show yet.
 
-Hermès still scrapes normally via `runCheck` once both links exist (found automatically or
-typed in) — only the *pairing* was ever the problem, not the price lookup. Loro Piana is manual
-end-to-end either way since it's also `scrapeBlocked`.
+Hermès still scrapes normally via `runCheck` once both links exist (found automatically, typed
+in, or already on file) — only the *pairing* was ever the problem, not the price lookup. Loro
+Piana is manual end-to-end either way since it's also `scrapeBlocked`.
 
 ### Serper calls must run strictly sequentially, never concurrently
 
@@ -177,38 +253,46 @@ now, which would corrupt the wrong product's name/price instead.)
 
 ### A same-domain Serper result isn't automatically the right *page*
 
-`serperLookup`'s hostname-matching (see above) fixes "wrong domain" results, but not "right
-domain, wrong page." When Google hasn't indexed the exact product URL well — common for
-Dior/LV — the only same-domain result it has can be the brand's own homepage instead, with a
-title that's just the bare brand name (e.g. `"Dior"`). That used to get treated as a perfectly
-good product name and filled straight into `#prodName`, which is how a Dior check could come
-back with the product name literally showing "Dior" instead of an actual product name.
+`serperLookup`'s hostname-matching fixes "wrong domain" results, but not "right domain, wrong
+page." When Google hasn't indexed the exact product URL well, the only same-domain result it has
+can be the brand's own homepage, a category page, or (confirmed live, Dior) even a
+customer-service contact page — any of which used to get treated as a perfectly good product
+name/price if it merely had a long-enough URL path. See the code-anchored `isOurProductPage`
+description above (under "Multi-stage, code-anchored Serper price/name lookup") for how a
+candidate now actually has to be verified against the specific product being searched for, not
+just plausible-looking.
 
-Fixed in two places:
-- `serperLookup`'s candidate order is: same-domain result with a path that looks like a real
-  product page (`looksLikeProductPage` — path length > 15, i.e. not just `/`) → the same-domain
-  match anyway, shallow or not → **nothing**, if Google simply never indexed the actual site for
-  this query. It used to also fall through to *any* off-domain result that merely looked like a
-  product page, then to whatever Google ranked first, on the theory that a reseller's real
-  listing beats the brand's own homepage — walked back on user instruction: an unverified
-  third-party page can carry a genuinely different price for what only looks like the same item
-  (a different colourway, a different condition, a different item entirely), and a silently
-  wrong price is worse than no price. A candidate now has to actually be the target site (or a
-  subdomain of it) before its price/title get trusted at all, never just "looks plausible."
-  Domain matching is done by `sameSite(hostnameA, hostnameB)`, not a raw `.includes()` — it
-  strips a leading `www.` from both sides and allows either to be a subdomain of the other,
-  which matters in practice: `chanel.com`'s Google-indexed FR result has no `www.` prefix at all
-  while the site's own canonical UK link does, and a plain substring check would silently reject
-  a perfectly genuine same-site match over that alone. `serperShoppingLookup` (the `/shopping`
-  fallback, see below) applies the exact same `sameSite` requirement — it also used to fall back
-  to `items[0]` regardless of domain, which is the same class of "trust an unverified seller's
-  price" problem.
-- `cleanTitle` is a second, independent safety net: if a title, once the trailing `| Brand`
-  stripped, is *just* the brand name on its own, it returns `null` instead of that bare name —
-  same as "no title at all." `applyName` in both `trySerperFill` and `trySerperPriceFallback`
-  checks the *cleaned* result before deciding whether to touch `#prodName`, not the raw title,
-  so this actually prevents the field from being filled rather than just cosmetically trimming
-  a bad value after the fact.
+Domain matching itself is done by `sameSite(hostnameA, hostnameB)`, not a raw `.includes()` — it
+strips a leading `www.` from both sides and allows either to be a subdomain of the other, which
+matters in practice: `chanel.com`'s Google-indexed FR result has no `www.` prefix at all while the
+site's own canonical UK link does, and a plain substring check would silently reject a perfectly
+genuine same-site match over that alone. This governs organic results; `serperShoppingLookup`
+can't reuse it at all (see above — Shopping results never carry a real merchant URL to check).
+
+`cleanTitle` is a second, independent, narrower safety net on top of all the above: if a title,
+once the trailing `| Brand` stripped, is *just* the brand name on its own, it returns `null`
+instead of that bare name — same as "no title at all." `applyName` in both `trySerperFill` and
+`trySerperPriceFallback` checks the *cleaned* result before deciding whether to touch `#prodName`,
+not the raw title. This only ever catches a title that's *exactly* the brand name, though — a
+longer plausible-but-wrong marketing string (e.g. Dior's actual homepage title,
+`"DIOR - US Official Online Boutique | Fashion and beauty ..."`) slips straight past it, which is
+why `serperLookup` now nulls out the title itself for anything that isn't a confirmed product
+page, rather than relying on `cleanTitle` to catch it downstream.
+
+**A real, pre-existing bug, unrelated to any of the above and predating this session entirely:**
+`hostMatches.find(looksLikeProductPage)` (and the equivalent for Shopping-style filtering) passed
+the *whole result object* to `looksLikeProductPage`, which expects a link string —
+`Array.prototype.find`'s callback always receives `(element, index, array)`, so this needs to be
+`hostMatches.find(r => looksLikeProductPage(r.link))`. The bug swallowed itself silently (`new
+URL(object)` throws inside `looksLikeProductPage`'s own try/catch, caught, returns `false` for
+every candidate) — meaning a real product page never won over the brand's own homepage even when
+both were same-domain candidates in the same result set. It went unnoticed for a long time because
+the code used to also fall back to *any* off-domain "looks like a product page" match (see
+below), which was written correctly and happened to mask this one; removing that off-domain
+fallback (per explicit user instruction not to trust unverified third-party sites — a reseller
+can carry a genuinely different price for what only looks like the same item) is what surfaced
+it. If a same-domain "prefer the deeper/more specific match" comparison is ever added again
+elsewhere, double-check the callback actually receives a link string, not a result object.
 
 ### Price parsing
 
