@@ -206,12 +206,25 @@ bespoke UI, these two brands just trigger it, but only as a last resort now:
   often a price from the single link that WAS pasted. Resolving the UK/FR pair and finding
   name/price/image for that one link are two separate problems, and failure of the first must
   never block the second. Now: whichever locale `detectLocale` recognises gets `showManualMode`
-  called immediately with that side's real URL and the other side left as `''` (never duplicated
+  called immediately with that side's real URL, the other side left as `''` (never duplicated
   into both — that would make "the FR price" just re-find the UK page's price under a different
-  label) — showing whatever Serper can find right away, with the missing side visibly marked
-  (`.stub-missing` on its link stub, an empty always-editable price field) rather than hidden.
-  `manualUk`/`manualFr` are still pre-filled and the panel still opens, so pasting the missing
-  link later completes the *same* catalog row (`findExistingBySku` matches on the known side,
+  label), and — **explicit product instruction: never make the user paste a second link just to
+  see a price, that defeats the point of the tool** — `trySerperFill` finds the blank side's
+  price anyway via `serperPriceByText`, a locale-flavoured TEXT search (product name + brand,
+  `+ "France"` for the FR side, per the same instruction) rather than ever requiring a URL for
+  it. Confirmed live (Loro Piana) that this is not just a fallback but often *more* reliable than
+  the URL-as-query technique the rest of this file uses — Google's ranking for "exact URL as
+  query" measurably varies run-to-run for this pattern (confirmed live: the identical query
+  returned 10 results one moment and 1 the next), while a plain descriptive text query
+  consistently surfaced the right page and price both via organic snippets and via Shopping.
+  `sameBrandSite`/`baseDomain` (distinct from `sameSite` — see below) verify a text-search
+  candidate belongs to the brand's own site family regardless of *which* locale subdomain it
+  happens to be, since there's no concrete URL for that locale to compare against.
+  The missing side's link stub is still visibly marked (`.stub-missing`, "link not found (price
+  found anyway)") and `manualUk`/`manualFr` are pre-filled with the known side, but the manual
+  panel is **not** force-opened any more — adding a real link for that side is now an optional
+  nicety (open/screenshot the actual listing), never something blocking the check, so pasting one
+  later just completes the *same* catalog row (`findExistingBySku` matches on the known side,
   which never changes across that transition) instead of creating a duplicate.
   - `showManualMode` itself also checks whether an *existing* catalog row already has the side
     that's blank this time (`ukUrl = ukUrl || (existing && existing.url_uk) || ''`, same for FR) —
@@ -268,6 +281,15 @@ matters in practice: `chanel.com`'s Google-indexed FR result has no `www.` prefi
 site's own canonical UK link does, and a plain substring check would silently reject a perfectly
 genuine same-site match over that alone. This governs organic results; `serperShoppingLookup`
 can't reuse it at all (see above — Shopping results never carry a real merchant URL to check).
+
+`sameBrandSite`/`baseDomain` are a **different, deliberately looser** pair used only by
+`serperPriceByText` (see "Not every brand's UK/FR link pair can be derived" above) — `sameSite`
+intentionally does NOT treat two different locale subdomains (`uk.`/`fr.`) as the same site, since
+most other call sites are verifying against one *specific known* locale's URL. `serperPriceByText`
+has no such URL to compare against — it just needs to confirm a text-search result belongs to the
+brand's site family at all, regardless of which locale subdomain — so `baseDomain` strips any
+leading `www.`/2-3-letter subdomain (`uk.`, `fr.`, `us.`, `ii.`, `hu.` — confirmed live these all
+exist for `loropiana.com`) before comparing.
 
 `cleanTitle` is a second, independent, narrower safety net on top of all the above: if a title,
 once the trailing `| Brand` stripped, is *just* the brand name on its own, it returns `null`

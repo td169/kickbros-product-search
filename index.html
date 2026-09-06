@@ -4006,9 +4006,9 @@
     el('ukLink').href = ukUrl || '#';
     // A blank side (pairing couldn't be resolved — see startCheckFromUrl) gets a visibly
     // inert stub instead of a dead "FR listing ↗" that looks clickable but goes nowhere.
-    el('frLink').textContent = frUrl ? 'FR listing ↗' : 'FR listing — paste below';
+    el('frLink').textContent = frUrl ? 'FR listing ↗' : 'FR link not found (price found anyway)';
     el('frLink').classList.toggle('stub-missing', !frUrl);
-    el('ukLink').textContent = ukUrl ? 'UK listing ↗' : 'UK listing — paste below';
+    el('ukLink').textContent = ukUrl ? 'UK listing ↗' : 'UK link not found (price found anyway)';
     el('ukLink').classList.toggle('stub-missing', !ukUrl);
     el('frPrice').value = frPrice != null ? frPrice : '';
     el('ukPrice').value = ukPrice != null ? ukPrice : '';
@@ -4113,6 +4113,24 @@
     return a === b || a.endsWith('.' + b) || b.endsWith('.' + a);
   }
 
+  // Same registrable domain regardless of which locale subdomain either side uses — unlike
+  // sameSite (which deliberately does NOT treat sibling subdomains as the same site, since for
+  // most brands a locale swap is exactly the thing being verified), this is for the specific
+  // case of confirming a Google result found via a locale-agnostic TEXT query genuinely belongs
+  // to the brand's own site family, when there's no concrete URL for that locale to compare
+  // against at all (see serperPriceByText). Strips a leading www./2-3 letter locale-looking
+  // subdomain (uk./fr./us./ii./hu./etc — confirmed live these all exist for loropiana.com) from
+  // both sides before comparing.
+  function baseDomain(hostname) {
+    const h = (hostname || '').toLowerCase();
+    const parts = h.split('.');
+    return (parts.length > 2 && /^[a-z]{2,3}$/.test(parts[0])) ? parts.slice(1).join('.') : h;
+  }
+  function sameBrandSite(hostnameA, hostnameB) {
+    const a = baseDomain(hostnameA), b = baseDomain(hostnameB);
+    return !!a && !!b && a === b;
+  }
+
   // Strips accents/case for a loose textual match — used to compare a Shopping result's
   // merchant name against a brand label (e.g. "Hermès" vs a listing's "Hermes"). Named
   // separately from the unrelated normalizeForMatch() used by client duplicate-detection,
@@ -4167,6 +4185,38 @@
     if (!res.ok) return [];
     const data = await res.json();
     return (data && data.organic) || [];
+  }
+
+  // Finds a price for a specific locale using ONLY a text query — no URL for that locale
+  // required at all. Used when a brand's UK/FR pair couldn't be paired up (Hermès, Loro Piana)
+  // and the user only ever pasted one side: explicit product instruction is that pasting a
+  // second link just to see a price defeats the point of the tool, so this searches harder
+  // instead of ever asking for one. Confirmed live (Loro Piana) that a plain "<product name>
+  // <brand> France" text query reliably surfaces the FR price (both in organic snippets and via
+  // Shopping) even when the "exact URL as query" technique the rest of this file relies on comes
+  // back with almost nothing — Google's ranking for that pattern is measurably more volatile
+  // than for a normal descriptive text query, so this isn't just a fallback, it's often the more
+  // reliable method for a locale with no known URL.
+  async function serperPriceByText(nameOrQuery, token, isFr, brandLabel, siteHint) {
+    const query = nameOrQuery + ' ' + brandLabel + (isFr ? ' France' : '');
+    const results = await serperOrganicSearch(query, token, isFr, 10).catch(() => []);
+    const siteMatches = siteHint
+      ? results.filter(r => { try { return sameBrandSite(new URL(r.link).hostname, siteHint); } catch (e) { return false; } })
+      : [];
+    const extractPrice = r => {
+      if (!r) return null;
+      const text = [r.title, r.snippet].filter(Boolean).join(' ');
+      const gbpMatch = text.match(/£\s?\d(?:[\d,.\s]*\d)?/);
+      const eurMatch = text.match(/€\s?\d(?:[\d,.\s]*\d)?|\d(?:[\d,.\s]*\d)?\s?€/);
+      return isFr ? (eurMatch ? eurMatch[0] : null) : (gbpMatch ? gbpMatch[0] : null);
+    };
+    let price = null;
+    for (const r of siteMatches) { price = extractPrice(r); if (price) break; }
+    if (!price) {
+      const shop = await serperShoppingLookup(query, token, isFr, brandLabel).catch(err => { console.error('serperShoppingLookup (byText)', err); return null; });
+      if (shop && shop.price) price = shop.price;
+    }
+    return price;
   }
 
   async function serperLookup(url, token, targetHostname, brandLabel) {
@@ -4383,9 +4433,10 @@
     try {
       // ukUrl/frUrl can legitimately be empty here — a brand whose UK/FR pair couldn't be
       // derived (Hermès, Loro Piana) still shows a card for whichever single locale link the
-      // user actually pasted, with the other side left blank for manual entry (see
-      // startCheckFromUrl). There's nothing to look up for an empty URL, so skip it outright
-      // rather than letting `new URL('')` throw and abort the rest of this function.
+      // user actually pasted. There's nothing to look up BY URL for an empty side (skip outright
+      // rather than letting `new URL('')` throw), but the missing side still gets its price
+      // filled in below via a text search — pasting a second link is never required just to see
+      // a number.
       if (ukUrl) {
         if (current.catalogId === id && !el('ukPrice').value) setPriceLoading('ukPrice', true);
         const ukInfo = await serperLookup(ukUrl, token, new URL(ukUrl).hostname, brandLabel).catch(err => { console.error('serperLookup (UK)', id, err); return null; });
@@ -4400,6 +4451,26 @@
         applyName(frInfo && frInfo.title);
         applyPrice('frPrice', frInfo ? parseMoney(frInfo.eurPrice) : null);
         if (current.catalogId === id) { setPriceLoading('frPrice', false); recalc(); }
+      }
+
+      // Exactly one of ukUrl/frUrl can be blank (pairing couldn't be resolved — see
+      // startCheckFromUrl) — that side still gets a price via a text search keyed off whichever
+      // name the block above just found (or, failing that, the known side's own product code),
+      // never left to require pasting a link just to see a number.
+      const knownUrl = ukUrl || frUrl;
+      if (knownUrl && (!ukUrl || !frUrl)) {
+        const missingField = ukUrl ? 'frPrice' : 'ukPrice';
+        const missingIsFr = !!ukUrl; // missing the FR side exactly when the UK side is the known one
+        if (current.catalogId === id && !el(missingField).value) {
+          const queryName = el('prodName').value.trim() || getSku(knownUrl);
+          if (queryName) {
+            setPriceLoading(missingField, true);
+            const price = await serperPriceByText(queryName, token, missingIsFr, brandLabel, new URL(knownUrl).hostname)
+              .catch(err => { console.error('serperPriceByText', id, err); return null; });
+            applyPrice(missingField, parseMoney(price));
+            if (current.catalogId === id) { setPriceLoading(missingField, false); recalc(); }
+          }
+        }
       }
 
       // Unlike name/price above, the image is never derived from what's currently in the DOM,
@@ -4565,8 +4636,12 @@
     // ukUrl/frUrl are the effective values (after the existing-catalog fallback above), so
     // this only actually flags a side as missing when we truly don't have a link for it yet —
     // not just because this particular check attempt didn't re-resolve one we already had.
+    // Not styled as an error: trySerperFill still finds that side's name/price via a text
+    // search (see serperPriceByText) regardless of whether a direct link for it ever turns up,
+    // so nothing is actually blocked here — this is just letting the user know the link itself
+    // (for opening/screenshotting the listing) is the one thing still missing, should they want it.
     const missingSide = !ukUrl ? 'UK' : (!frUrl ? 'FR' : null);
-    setStatus(missingSide ? ('Couldn’t find the ' + missingSide + ' listing automatically — paste it below to complete this entry.') : '', !!missingSide);
+    setStatus(missingSide ? ('Found via search — no direct ' + missingSide + ' link though, paste one below if you want it saved too.') : '');
     let focusTarget = null;
     if (!initialName) focusTarget = 'prodName';
     else if (initialUkPrice == null && initialFrPrice == null) focusTarget = 'frPrice';
@@ -4714,21 +4789,24 @@
       }
       // Couldn't resolve the pair automatically. Resolving the UK/FR pair and finding a
       // name/price/image for the single link that WAS pasted are two separate problems —
-      // failure of the first must never block the second (confirmed live: Serper finds a real
-      // name and often a price from just this one link, even when it can't find the other
-      // locale's link at all). Show whatever that single side can tell us immediately via the
-      // same showManualMode/Serper path any other manual-mode brand uses, with the other side
-      // left genuinely blank for manual entry — never duplicated into both fields, which would
-      // make "the FR price" just re-find the UK page's price under a different label.
+      // failure of the first must never block the second, and must never require the user to
+      // paste a second link just to get a price (explicit product instruction — pasting a link
+      // just to see a number defeats the point of the tool). Show whatever that single side can
+      // tell us immediately via showManualMode, which now finds the missing side's price via a
+      // text search (serperPriceByText) rather than requiring its URL at all. The other side is
+      // left genuinely blank rather than duplicated into both fields (which would make "the FR
+      // price" just re-find the UK page's price under a different label) — manualUk/manualFr
+      // are pre-filled with the known side in case the user wants to add a real link later
+      // (e.g. to open/screenshot the listing), but the manual panel is NOT force-opened, since
+      // adding that link is now optional, not something blocking the check.
       if (locale) {
         const ukUrl = locale === 'uk' ? raw : '';
         const frUrl = locale === 'fr' ? raw : '';
         manualUk.value = ukUrl;
         manualFr.value = frUrl;
-        manualPanel.classList.add('open');
-        // showManualMode sets its own "couldn't find the X listing" status once it knows the
-        // final picture (it may find the missing side was already on file from a previous
-        // check, in which case there's nothing actually missing to report).
+        // showManualMode sets its own status once it knows the final picture (it may find the
+        // missing side was already on file from a previous check, in which case there's nothing
+        // actually missing to report).
         showManualMode(ukUrl, frUrl, brand.name, brandKey, null);
         return;
       }
