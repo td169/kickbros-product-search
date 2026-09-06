@@ -4278,7 +4278,12 @@
       if (secondaryFetched) return secondary;
       secondaryFetched = true;
       if (codeHint && brandLabel) {
-        const results2 = await serperOrganicSearch(codeHint + ' ' + brandLabel, token, isFr, 10).catch(() => []);
+        // Appending the country name for the FR side is a small addition on top of the gl/hl
+        // locale params, but confirmed live (Loro Piana, via serperPriceByText below) that it
+        // measurably improves how consistently Google surfaces the right French listing for a
+        // text query — applied here too so every brand's normal lookup benefits, not just the
+        // brands that fall back to a pure text search when their UK/FR pair can't be paired up.
+        const results2 = await serperOrganicSearch(codeHint + ' ' + brandLabel + (isFr ? ' France' : ''), token, isFr, 10).catch(() => []);
         secondary = pickCandidates(results2);
       }
       return secondary;
@@ -4325,7 +4330,11 @@
     // product page and no price found from organic search is the tolerated "couldn't find it"
     // outcome, not something to paper over with a guess.
     if (!gbpPrice && !eurPrice && (isConfirmedProductPage || !top)) {
-      const shop = await serperShoppingLookup(isConfirmedProductPage ? title : url, token, isFr, brandLabel).catch(err => { console.error('serperShoppingLookup', err); return null; });
+      // Same "+ France" addition as the organic retry above, only when querying by a real
+      // confirmed title — appending it to the raw URL fallback (when nothing was ever
+      // confirmed) wouldn't mean anything.
+      const shopQuery = isConfirmedProductPage ? (title + (isFr ? ' France' : '')) : url;
+      const shop = await serperShoppingLookup(shopQuery, token, isFr, brandLabel).catch(err => { console.error('serperShoppingLookup', err); return null; });
       if (shop) {
         if (isConfirmedProductPage) title = title || shop.title;
         if (shop.price) { if (isFr) eurPrice = shop.price; else gbpPrice = shop.price; }

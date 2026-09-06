@@ -116,7 +116,12 @@ matching UK/FR URL from whichever one the user pasted, plus a `scrapeBlocked` fl
     has its own failure mode: it can rank a *different, unrelated same-brand product* above the
     actual target (confirmed live: Google's top same-domain result for `"<code> Dior"` was a
     different product's page entirely) — so its candidates are filtered to ones whose own URL
-    contains the searched-for code before being considered at all, same principle as above.
+    contains the searched-for code before being considered at all, same principle as above. This
+    retry query (and the Shopping query right below, when it's built from a confirmed title) also
+    appends `" France"` on the FR side — **applies to every brand's normal lookup, not only the
+    text-search-only path used when a brand's UK/FR pair can't be resolved at all** (see "Not
+    every brand's UK/FR link pair can be derived" below) — per explicit product instruction to use
+    the same proven technique everywhere rather than treat it as a one-off Loro Piana fix.
   - **Title and price are always extracted from the same single winning result, never stitched
     across two different candidates.** An earlier version picked title from one query's result and
     price from another's independently — which let a bad match's title (Dior's own homepage)
