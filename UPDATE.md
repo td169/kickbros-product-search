@@ -6,6 +6,30 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-10-04 — Weekly Thursday scans, 45-day window, "Update now" with live progress
+
+### Trip scan now runs weekly, on a 45-day window
+
+The flight/hotel price scan was running every 3 days across a 61-day window; it now runs once a
+week, every Thursday at 06:00 UTC, and only covers the next 45 days. Older rows beyond that
+window from earlier scans are left alone, not deleted — they just stop refreshing.
+
+### "Update now" button on Plan next trip
+
+You can trigger a fresh scan on demand from the Plan next trip screen instead of waiting for
+Thursday. It asks for confirmation first (it costs real money), then kicks off the same GitHub
+Action the schedule uses. A thin progress bar at the top of the screen tracks the real scan
+progress (not a fake timer) while it runs — the existing flight/hotel options stay fully visible
+and usable the whole time, and only get replaced once the fresh data is in. Needs a GitHub
+personal access token saved in Settings (Actions: read & write on this repo only).
+
+### "Last updated" on every option
+
+Every flight/hotel card now shows how long ago that price was actually checked (e.g. "Last
+updated: 2 days ago"), so it's clear which prices are fresh and which are from an older scan.
+
+---
+
 ## 2026-08-19 — Three new brands, better auto-fill, missing-FR-price fix
 
 ### New brands: Hermès, Prada, Loro Piana

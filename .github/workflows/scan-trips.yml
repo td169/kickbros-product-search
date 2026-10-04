@@ -2,9 +2,8 @@ name: Scan next-trip flight & hotel prices
 
 on:
   schedule:
-    # Every 3 days at 06:00 UTC. Adjust this if Duffel's per-search cost turns out to make a
-    # tighter or looser cadence more sensible once you've seen a real bill — see CLAUDE.md.
-    - cron: "0 6 */3 * *"
+    # Weekly, every Thursday at 06:00 UTC. Replaced the old every-3-days cadence — see CLAUDE.md.
+    - cron: "0 6 * * 4"
   workflow_dispatch:
     inputs:
       target_month:

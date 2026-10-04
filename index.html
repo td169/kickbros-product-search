@@ -822,6 +822,31 @@
 
   /* plan next trip */
   .plan-trip-btn{width:100%;margin-bottom:14px;}
+  .plan-trip-update-btn{
+    height:30px;padding:0 14px;border:none;border-radius:var(--radius-pill);
+    background:var(--surface);color:var(--ink);font-family:inherit;font-size:12.5px;font-weight:700;
+    cursor:pointer;transition:background .15s;flex:none;
+  }
+  .plan-trip-update-btn:hover{background:var(--surface-2);}
+  .plan-trip-update-btn:disabled{color:var(--muted-2);cursor:default;}
+  .plan-trip-update-error{
+    color:var(--danger);font-size:12.5px;line-height:1.5;margin:-6px 0 14px;
+  }
+  .plan-trip-progress-bar{
+    position:fixed;top:0;left:0;right:0;height:3px;z-index:55;background:var(--surface-2);
+    display:flex;align-items:flex-start;
+  }
+  .plan-trip-progress-bar[hidden]{display:none;}
+  .plan-trip-progress-fill{
+    height:3px;background:var(--ink);width:0%;transition:width .4s ease;
+  }
+  .plan-trip-progress-label{
+    position:absolute;top:6px;left:50%;transform:translateX(-50%);
+    font-size:11px;font-weight:700;color:var(--ink);background:var(--card-bg);
+    padding:3px 10px;border-radius:var(--radius-pill);box-shadow:var(--shadow-card);white-space:nowrap;
+  }
+  .plan-trip-result-updated{font-size:10.5px;color:var(--muted-2);text-align:right;margin-top:8px;}
+
   .plan-trip-checks{display:flex;gap:18px;margin-bottom:12px;flex-wrap:wrap;}
   .plan-trip-check-group{flex:1;min-width:130px;}
   .plan-trip-check-label{
@@ -1378,12 +1403,19 @@
   </main>
 
   <main class="view" id="planTripView">
+    <div class="plan-trip-progress-bar" id="planTripProgressBar" hidden>
+      <div class="plan-trip-progress-fill" id="planTripProgressFill"></div>
+      <span class="plan-trip-progress-label" id="planTripProgressLabel"></span>
+    </div>
     <div class="view-header">
       <button class="text-link" id="planTripBack">← Trips</button>
+      <button type="button" class="btn-pill plan-trip-update-btn" id="updateNowBtn">Update now</button>
     </div>
     <h1>Plan next trip</h1>
     <p class="sub">Land in Paris by 11:00, one night, fly back 21:00–23:59 the next day. Outbound
-      Mon/Tue/Wed only. Prices refresh automatically every few days — this isn't a live search.</p>
+      Mon/Tue/Wed only. Prices refresh automatically every Thursday — tap "Update now" above for
+      an on-demand refresh (costs real money, see the confirmation).</p>
+    <p class="plan-trip-update-error" id="updateNowError" hidden></p>
 
     <div class="field">
       <label>Month</label>
@@ -1416,8 +1448,7 @@
 
     <div id="planTripResults"></div>
     <p class="empty-state" id="planTripEmpty">No scanned prices yet for these filters — results
-      refresh automatically every few days, or trigger a fresh scan from this repo's Actions tab
-      on GitHub if you don't want to wait.</p>
+      refresh automatically every Thursday, or tap "Update now" above for an on-demand scan.</p>
   </main>
 
   <div class="modal-overlay" id="newTripOverlay">
@@ -1463,6 +1494,20 @@
       <div class="modal-actions">
         <button type="button" class="btn-secondary" id="deleteConfirmCancel">Cancel</button>
         <button type="button" class="btn-danger" id="deleteConfirmBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="updateNowConfirmOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Update prices now?</h3>
+        <button type="button" class="modal-close" id="updateNowConfirmClose" aria-label="Close">×</button>
+      </div>
+      <p class="modal-text">Are you sure? (This costs credits and money)</p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="updateNowConfirmCancel">Cancel</button>
+        <button type="button" class="btn-primary" id="updateNowConfirmYes">Yes, update</button>
       </div>
     </div>
   </div>
@@ -1514,6 +1559,10 @@
       <div class="field">
         <label>Serper API token <span class="hint">optional</span></label>
         <input type="password" id="setSerperToken" placeholder="serper key…" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>GitHub token <span class="hint">required for "Update now" on Plan next trip — fine-grained PAT, "Actions: read &amp; write" on this repo only</span></label>
+        <input type="password" id="setGithubToken" placeholder="github_pat_…" autocomplete="off">
       </div>
 
       <h3>Pricing</h3>
@@ -1771,6 +1820,16 @@
     else localStorage.removeItem(SERPER_KEY);
   });
 
+  const GITHUB_TOKEN_KEY = 'kickbros_github_token';
+  const githubTokenInput = el('setGithubToken');
+  const savedGithubToken = localStorage.getItem(GITHUB_TOKEN_KEY);
+  if (savedGithubToken) githubTokenInput.value = savedGithubToken;
+  githubTokenInput.addEventListener('input', () => {
+    const v = githubTokenInput.value.trim();
+    if (v) localStorage.setItem(GITHUB_TOKEN_KEY, v);
+    else localStorage.removeItem(GITHUB_TOKEN_KEY);
+  });
+
   // ---- Supabase (shared catalog) ----
   // `db` names our client instance — deliberately not `supabase`, since that name is already
   // the CDN script's global namespace object (window.supabase.createClient); reusing it would
@@ -1800,11 +1859,12 @@
   });
 
   el('forgetToken').addEventListener('click', () => {
-    [TOKEN_KEY, SERPER_KEY, SUPA_URL_KEY, SUPA_ANON_KEY].forEach(k => localStorage.removeItem(k));
+    [TOKEN_KEY, SERPER_KEY, SUPA_URL_KEY, SUPA_ANON_KEY, GITHUB_TOKEN_KEY].forEach(k => localStorage.removeItem(k));
     apifyTokenInput.value = '';
     serperTokenInput.value = '';
     supaUrlInput.value = '';
     supaKeyInput.value = '';
+    githubTokenInput.value = '';
     initSupabaseClient();
     apifyTokenInput.focus();
   });
@@ -2641,6 +2701,8 @@
       trackedHotelsCache = trackedRows;
       renderPlanTripResults();
     });
+
+    if (!scanInProgress) checkScanAlreadyRunning();
   }
 
   // Matches how every airline/travel site shows a flight: departure in the origin airport's
@@ -2654,6 +2716,32 @@
   }
   function fmtShortDate(dateStr) {
     return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+
+  // Relative-time label for each option card's "Last updated" — re-run whenever the view
+  // renders, not ticked live, since "a few minutes ago" granularity doesn't need a timer.
+  function fmtRelativeTime(iso) {
+    if (!iso) return 'unknown';
+    const then = new Date(iso).getTime();
+    if (Number.isNaN(then)) return 'unknown';
+    const diffSec = Math.round((Date.now() - then) / 1000);
+    if (diffSec < 30) return 'just now';
+    const mins = Math.round(diffSec / 60);
+    if (mins < 60) return mins + (mins === 1 ? ' minute ago' : ' minutes ago');
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
+    const days = Math.round(hours / 24);
+    if (days < 7) return days + (days === 1 ? ' day ago' : ' days ago');
+    const weeks = Math.round(days / 7);
+    return weeks + (weeks === 1 ? ' week ago' : ' weeks ago');
+  }
+  // A trip card combines a flight row and (maybe) a hotel row, each with their own updated_at —
+  // show the freshness of whichever of the two actually changed most recently, rather than
+  // picking one arbitrarily.
+  function pickLatestIso(...isoList) {
+    const valid = isoList.filter(Boolean);
+    if (!valid.length) return null;
+    return valid.reduce((a, b) => (new Date(a) > new Date(b) ? a : b));
   }
 
   // "Cheapest Per" mode: one card per tracked hotel (every hotel gets a chance to show up,
@@ -2675,7 +2763,7 @@
         if (!match) return;
         const total = f.total_price + match.nightly_price;
         if (!best || total < best.total) {
-          best = { flight: f, hotelPrice: match.nightly_price, hotelName: hotel.name, total };
+          best = { flight: f, hotelPrice: match.nightly_price, hotelName: hotel.name, total, hotelUpdatedAt: match.updated_at };
         }
       });
       if (best) candidates.push(best);
@@ -2716,13 +2804,14 @@
             const tracked = hotelByName[h.hotel_name];
             return tracked && tracked.tier === tierFilter;
           });
-          let hotelPrice = null, hotelName = null;
+          let hotelPrice = null, hotelName = null, hotelUpdatedAt = null;
           if (matches.length) {
             const cheapest = matches.reduce((a, b) => (a.nightly_price <= b.nightly_price ? a : b));
             hotelPrice = cheapest.nightly_price;
             hotelName = cheapest.hotel_name;
+            hotelUpdatedAt = cheapest.updated_at;
           }
-          return { flight: f, hotelPrice, hotelName, total: f.total_price + (hotelPrice || 0) };
+          return { flight: f, hotelPrice, hotelName, hotelUpdatedAt, total: f.total_price + (hotelPrice || 0) };
         })
         .sort((a, b) => {
           if (a.total !== b.total) return a.total - b.total;
@@ -2810,6 +2899,11 @@
         card.appendChild(note);
       }
 
+      const updatedLine = document.createElement('div');
+      updatedLine.className = 'plan-trip-result-updated';
+      updatedLine.textContent = 'Last updated: ' + fmtRelativeTime(pickLatestIso(f.updated_at, c.hotelUpdatedAt));
+      card.appendChild(updatedLine);
+
       const useBtn = document.createElement('button');
       useBtn.type = 'button';
       useBtn.className = 'plan-trip-use-btn';
@@ -2854,6 +2948,134 @@
       renderPlanTripResults();
     });
   });
+
+  // ---- "Update now": trigger scan-trips.yml on demand, track its progress via scan_progress ----
+  const GITHUB_REPO = 'td169/kickbros-product-search';
+  const GITHUB_WORKFLOW_FILE = 'scan-trips.yml';
+  let scanInProgress = false;
+  let scanProgressPollTimer = null;
+
+  function showUpdateError(msg) {
+    const box = el('updateNowError');
+    box.textContent = msg;
+    box.hidden = false;
+  }
+  function clearUpdateError() { el('updateNowError').hidden = true; }
+
+  function showScanProgressBar(pct, label) {
+    el('planTripProgressBar').hidden = false;
+    el('planTripProgressFill').style.width = Math.max(0, Math.min(100, pct)) + '%';
+    el('planTripProgressLabel').textContent = label;
+  }
+  function hideScanProgressBar() { el('planTripProgressBar').hidden = true; }
+
+  function stopScanProgressPolling() {
+    if (scanProgressPollTimer) { clearInterval(scanProgressPollTimer); scanProgressPollTimer = null; }
+  }
+
+  // Persistence and on-screen rendering are deliberately decoupled here too, same principle as
+  // the Serper image-fallback elsewhere in this file: finishing an update always reloads the
+  // cached data and marks the button usable again, even if the user has since left this view —
+  // there's nothing screen-specific to guard, unlike a card bound to one in-flight product.
+  async function finishScanUpdate() {
+    scanInProgress = false;
+    el('updateNowBtn').disabled = false;
+    await Promise.all([
+      loadFlightPrices().then(rows => { flightPricesCache = rows; }),
+      loadHotelPrices().then(rows => { hotelPricesCache = rows; }),
+      loadTrackedHotels().then(rows => { trackedHotelsCache = rows; }),
+    ]);
+    renderPlanTripResults();
+  }
+
+  async function pollScanProgress() {
+    if (!db) { stopScanProgressPolling(); return; }
+    const { data, error } = await db.from('scan_progress').select('*').eq('id', 1).single();
+    if (error || !data) return;
+    if (data.status === 'running') {
+      showScanProgressBar(data.percent || 0, 'Updating... ' + (data.percent || 0) + '%');
+    } else if (data.status === 'done') {
+      stopScanProgressPolling();
+      showScanProgressBar(100, 'Updated');
+      setTimeout(() => { hideScanProgressBar(); finishScanUpdate(); }, 1200);
+    } else if (data.status === 'failed') {
+      stopScanProgressPolling();
+      scanInProgress = false;
+      el('updateNowBtn').disabled = false;
+      hideScanProgressBar();
+      showUpdateError('Update failed: ' + (data.message || 'unknown error'));
+    }
+  }
+  function startScanProgressPolling() {
+    pollScanProgress();
+    scanProgressPollTimer = setInterval(pollScanProgress, 3000);
+  }
+
+  // Covers the case where a scan was triggered elsewhere (another device, workflow_dispatch
+  // from the Actions tab) and is still running when this view opens — scan_progress is the
+  // single source of truth for "is a scan running right now" since it's the script's own live
+  // status, not just a snapshot of whichever workflow run happened to be dispatched last.
+  async function checkScanAlreadyRunning() {
+    if (!db) return;
+    const { data, error } = await db.from('scan_progress').select('*').eq('id', 1).single();
+    if (error || !data) return;
+    if (data.status === 'running') {
+      scanInProgress = true;
+      el('updateNowBtn').disabled = true;
+      showScanProgressBar(data.percent || 0, 'Updating... ' + (data.percent || 0) + '%');
+      startScanProgressPolling();
+    }
+  }
+
+  async function dispatchScanWorkflow(token) {
+    const resp = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW_FILE}/dispatches`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ref: 'main' }),
+      }
+    );
+    if (!resp.ok) {
+      let detail = '';
+      try { detail = (await resp.json()).message || ''; } catch (e) {}
+      throw new Error(`GitHub API error ${resp.status}${detail ? ': ' + detail : ''}`);
+    }
+  }
+
+  async function startScanUpdate() {
+    clearUpdateError();
+    const token = localStorage.getItem(GITHUB_TOKEN_KEY);
+    if (!token) {
+      showUpdateError('Add a GitHub token in Settings to use "Update now".');
+      return;
+    }
+    el('updateNowBtn').disabled = true;
+    try {
+      await dispatchScanWorkflow(token);
+    } catch (e) {
+      el('updateNowBtn').disabled = false;
+      showUpdateError('Could not start the update: ' + e.message);
+      return;
+    }
+    scanInProgress = true;
+    showScanProgressBar(0, 'Updating... 0%');
+    startScanProgressPolling();
+  }
+
+  el('updateNowBtn').addEventListener('click', () => {
+    if (scanInProgress) return;
+    el('updateNowConfirmOverlay').classList.add('open');
+  });
+  function closeUpdateNowConfirm() { el('updateNowConfirmOverlay').classList.remove('open'); }
+  el('updateNowConfirmClose').addEventListener('click', closeUpdateNowConfirm);
+  el('updateNowConfirmCancel').addEventListener('click', closeUpdateNowConfirm);
+  el('updateNowConfirmOverlay').addEventListener('click', e => { if (e.target === el('updateNowConfirmOverlay')) closeUpdateNowConfirm(); });
+  el('updateNowConfirmYes').addEventListener('click', () => { closeUpdateNowConfirm(); startScanUpdate(); });
 
   // ---- new trip modal ----
   // `prefill` (optional) lets "Use this trip" from the Plan-next-trip screen pre-populate every

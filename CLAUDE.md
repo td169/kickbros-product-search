@@ -604,8 +604,10 @@ failed, without writing anything.
 
 ### Tokens
 
-Apify (`kickbros_apify_token`), Serper (`kickbros_serper_token`), and the Supabase project
-URL/anon key (`kickbros_supabase_url` / `kickbros_supabase_anon_key`) all live in
+Apify (`kickbros_apify_token`), Serper (`kickbros_serper_token`), the Supabase project
+URL/anon key (`kickbros_supabase_url` / `kickbros_supabase_anon_key`), and a GitHub
+fine-grained PAT (`kickbros_github_token`, "Actions: read & write" on this repo only — used
+solely to dispatch `scan-trips.yml` from the "Update now" button, see below) all live in
 `localStorage` only, entered by the user in the settings panel. This repo is **public** —
 never hardcode a real value for any of these into `index.html`, the migration script, or a
 commit. (The Supabase anon key is safe to expose client-side by Supabase's own design — access
@@ -628,9 +630,16 @@ browsers block it outright. The hotel side has its own server-side requirement t
 reasoning as the Apify scraper originally being ruled out for Dior/LV, just more so: it needs a
 Python runtime and a key (`SCRAPFLY_KEY`) that must never reach the browser.
 
-Both run in `.github/workflows/scan-trips.yml` (scheduled every 3 days, plus `workflow_dispatch`
-for an on-demand run with optional `target_month`/cutoff-time inputs) via `scripts/scan_trips.py`,
-writing to two Supabase tables the client only ever reads from:
+Both run in `.github/workflows/scan-trips.yml` (scheduled weekly, every Thursday 06:00 UTC —
+cron `0 6 * * 4`, replacing an earlier every-3-days cadence — plus `workflow_dispatch` for an
+on-demand run with optional `target_month`/cutoff-time inputs, or triggered on demand from the
+app itself via the "Update now" button below) via `scripts/scan_trips.py`, writing to two
+Supabase tables the client only ever reads from. Every run only covers `ROLLING_WINDOW_DAYS`
+(45) days ahead — there's no separate monthly/third-month pass. Rows already in the tables
+from an earlier scan that are now outside that 45-day window are left alone (not deleted, just
+not refreshed) — `delete_stale_flight_rows` only clears rows inside the *currently scanned*
+date range, specifically so a run with a narrower window than a previous one can't wipe out
+still-valid older data it simply isn't looking at this time:
 
 ```sql
 create table flight_prices (
@@ -656,6 +665,21 @@ create table hotel_prices (
 pre-converted to GBP, formatted as e.g. `"£342"`; parsed by stripping everything but digits/`.`
 before `float()` — a first real run crashed trying to `float("£342")` directly).
 
+Both tables got an `updated_at timestamptz default now()` column added later, for the
+Plan-next-trip UI's per-card "Last updated: 2 days ago" label:
+
+```sql
+alter table flight_prices add column if not exists updated_at timestamptz default now();
+alter table hotel_prices add column if not exists updated_at timestamptz default now();
+```
+
+The `default now()` only fires on INSERT, not on an upsert that merges into an existing row
+(same gotcha as `trips.updated_at` elsewhere) — `upsert_supabase()` in `scan_trips.py` stamps
+`updated_at` explicitly onto every row it sends, generically, for exactly this reason, so a
+refreshed price's timestamp is always current rather than stuck at whenever that row was first
+inserted. A row with no `updated_at` at all (older data from before the column existed) shows
+"Last updated: unknown" client-side rather than a wrong-looking relative time.
+
 Both tables need `enable row level security` + an `allow all` policy, same as `trips` — a first
 live run caught that the policy hadn't actually taken even though the tables had been created;
 inserts failed with `42501` until the `create policy` statements were re-run explicitly. Both
@@ -668,6 +692,55 @@ The workflow needs **four** repository secrets: the already-added `SCRAPFLY_KEY`
 `DUFFEL_KEY`, `SUPABASE_URL`, and `SUPABASE_ANON_KEY` (the latter two only live in browser
 localStorage today — the Action needs its own copies to write results; safe to expose per the
 Tokens section above, this is just about the Action actually having them).
+
+#### "Update now" button + live progress (`scan_progress` table)
+
+The Plan-next-trip screen has an "Update now" button (top of the view) for triggering a scan
+on demand instead of waiting for Thursday. Clicking it always shows a confirm modal first ("Are
+you sure? (This costs credits and money)") — nothing fires on a bare click. On "Yes", the
+client POSTs straight to `POST /repos/td169/kickbros-product-search/actions/workflows/scan-trips.yml/dispatches`
+(`{ "ref": "main" }`) using the GitHub PAT from Settings
+(`kickbros_github_token`) — GitHub's REST API sends CORS headers on all public endpoints, so
+this works directly from the browser, no server-side relay needed, same as every other
+third-party call in this app. Missing token → the button shows an inline message pointing at
+Settings instead of silently failing.
+
+The progress bar's percentage is **real**, not a timer — `scan_trips.py` writes it to a
+single-row Supabase table, `scan_progress` (`id` fixed at `1`), which the client polls every
+~3s while a scan is running:
+
+```sql
+create table scan_progress (
+  id int primary key default 1,
+  status text not null default 'idle' check (status in ('idle', 'running', 'done', 'failed')),
+  percent int not null default 0,
+  message text,
+  started_at timestamptz,
+  updated_at timestamptz default now()
+);
+insert into scan_progress (id, status, percent) values (1, 'idle', 0);
+alter table scan_progress enable row level security;
+create policy "allow all" on scan_progress for all using (true) with check (true);
+```
+
+`set_progress()` in `scan_trips.py` sets `running`/`0` right before the real work starts (only
+for a real run — `--dry-run` and `--debug-offer` never touch this table), then updates
+`percent` as it goes: flights and hotels are each a share of the total (0–50% / 50–100% when
+both run; whichever phase is skipped takes the other's whole 0–100% share), advanced once per
+search/scrape completed. The scan body is wrapped in `try`/`finally` specifically so a crash
+still ends in `status: 'failed'` with the exception message — never stuck on `running` forever,
+which would otherwise leave the app's progress bar spinning indefinitely with no way to tell
+the difference between "still working" and "died silently."
+
+Client-side, `scan_progress` is also how `openPlanTrip()` detects a scan already running when
+the screen opens (from another device, or a manual `workflow_dispatch` from the Actions tab) —
+deliberately read from this table rather than the GitHub Actions run-status API, since it's the
+script's own live status rather than a snapshot of whichever run happened to be dispatched
+most recently. While a scan is running, the existing flight/hotel options on screen are left
+exactly alone (no clearing, no greying out, filters keep working) — `renderPlanTripResults()`
+is simply never called by the poll itself, only by a filter change or by the final "done"
+transition, which re-fetches fresh data and re-renders once, not before. On `failed`, the old
+options are likewise left untouched; only an inline red error message shows.
 
 Origins are a **fixed set** (Southend/Luton/Stansted) — never add Gatwick/Heathrow/City as
 options. Destinations default to CDG+Orly; Beauvais is always scanned server-side too (so the

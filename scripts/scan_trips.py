@@ -23,7 +23,7 @@ import os
 import re
 import sys
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -41,7 +41,7 @@ PARIS_TZ = ZoneInfo("Europe/Paris")
 UK_TZ = ZoneInfo("Europe/London")
 DEFAULT_ARRIVAL_CUTOFF = "11:00"
 DEFAULT_DEPARTURE_WINDOW = ("21:00", "23:59")
-ROLLING_WINDOW_DAYS = 61  # matches the hotel scraper's own default price_n_days
+ROLLING_WINDOW_DAYS = 45  # the whole scan window — no separate monthly/third-month pass
 # A first real run at 0.2s between calls hit Duffel's rate limit almost immediately (nearly all
 # 225 searches came back 429). 1.0s is untested but a much safer starting point — tune this
 # down carefully if it turns out to be overly conservative, watching for 429s in the log either way.
@@ -169,7 +169,7 @@ def offer_is_valid(offer, arrival_cutoff_hhmm, dep_window_start_hhmm, dep_window
     return True
 
 
-def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target_month):
+def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target_month, progress_cb=None):
     rows = []
     dates = list(valid_outbound_dates(date.today() + timedelta(days=1), ROLLING_WINDOW_DAYS, target_month))
     combos = [(d, o, dest) for d in dates for o in ORIGIN_AIRPORTS for dest in DESTINATION_AIRPORTS]
@@ -190,6 +190,8 @@ def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target
         offers = duffel_search(session, origin, dest, out_date, ret_date, duffel_key)
         valid_offers = [o for o in offers if offer_is_valid(o, arrival_cutoff, dep_start, dep_end)]
         if not valid_offers:
+            if progress_cb:
+                progress_cb(i, len(combos))
             time.sleep(DUFFEL_REQUEST_DELAY)
             continue
         cheapest = min(valid_offers, key=lambda o: float(o["total_amount"]))
@@ -211,6 +213,8 @@ def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target
             "total_price": float(cheapest["total_amount"]),
             "currency": cheapest.get("total_currency", "GBP"),
         })
+        if progress_cb:
+            progress_cb(i, len(combos))
         time.sleep(DUFFEL_REQUEST_DELAY)
     return rows, dates
 
@@ -232,7 +236,7 @@ def load_tracked_hotels(supabase_url, supabase_key):
     return [h for h in resp.json() if h.get("booking_url")]
 
 
-def scan_hotels(dry_run, supabase_url, supabase_key):
+def scan_hotels(dry_run, supabase_url, supabase_key, progress_cb=None):
     rows = []
     hotels = load_tracked_hotels(supabase_url, supabase_key)
     if not hotels:
@@ -249,7 +253,7 @@ def scan_hotels(dry_run, supabase_url, supabase_key):
     import bookingcom  # vendored — see scripts/vendor/bookingcom.py for provenance/license
 
     async def run():
-        for hotel in hotels:
+        for i, hotel in enumerate(hotels, 1):
             log(f"  scraping {hotel['name']}...")
             try:
                 result = await bookingcom.scrape_hotel(
@@ -257,6 +261,8 @@ def scan_hotels(dry_run, supabase_url, supabase_key):
                 )
             except Exception as e:
                 log(f"    failed: {e}")
+                if progress_cb:
+                    progress_cb(i, len(hotels))
                 continue
             for day in result.get("price", []):
                 try:
@@ -291,6 +297,8 @@ def scan_hotels(dry_run, supabase_url, supabase_key):
                     "nightly_price": nightly_price,
                     "currency": "GBP",  # matches BASE_CONFIG's country:"GB" in bookingcom.py
                 })
+            if progress_cb:
+                progress_cb(i, len(hotels))
 
     asyncio.run(run())
     return rows
@@ -300,6 +308,13 @@ def upsert_supabase(table, rows, on_conflict, supabase_url, supabase_key):
     if not rows:
         log(f"  nothing to upsert into {table}")
         return
+    # The `updated_at default now()` on these tables only fires on INSERT — an upsert that hits
+    # the on_conflict branch (a row we already have, just refreshing its price) leaves the old
+    # timestamp in place otherwise. Stamp it explicitly on every row so the app's "Last updated"
+    # label is accurate for a refreshed row, not just a brand-new one.
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for row in rows:
+        row["updated_at"] = now_iso
     resp = requests.post(
         f"{supabase_url.rstrip('/')}/rest/v1/{table}?on_conflict={on_conflict}",
         headers={
@@ -335,6 +350,42 @@ def delete_stale_flight_rows(dates, supabase_url, supabase_key):
     )
     if not resp.ok:
         log(f"  delete_stale_flight_rows failed: {resp.status_code} {resp.text[:300]}")
+
+
+def set_progress(supabase_url, supabase_key, status=None, percent=None, message=None, started=False):
+    """Upserts the single scan_progress row (id=1) the app polls for the "Update now" bar. Only
+    writes the fields passed in — merge-duplicates upsert leaves every other column untouched,
+    so a percent-only call during the scan never clobbers `started_at` from the initial call.
+    Best-effort: the app's progress bar is a nicety, never something a failed write here should
+    take the whole scan down for."""
+    if not supabase_url or not supabase_key:
+        return
+    now_iso = datetime.now(timezone.utc).isoformat()
+    row = {"id": 1, "updated_at": now_iso}
+    if status is not None:
+        row["status"] = status
+    if percent is not None:
+        row["percent"] = percent
+    if message is not None:
+        row["message"] = message
+    if started:
+        row["started_at"] = now_iso
+    try:
+        resp = requests.post(
+            f"{supabase_url.rstrip('/')}/rest/v1/scan_progress?on_conflict=id",
+            headers={
+                "apikey": supabase_key,
+                "Authorization": f"Bearer {supabase_key}",
+                "Content-Type": "application/json",
+                "Prefer": "resolution=merge-duplicates,return=minimal",
+            },
+            data=json.dumps([row]),
+            timeout=15,
+        )
+        if not resp.ok:
+            log(f"  set_progress failed: {resp.status_code} {resp.text[:300]}")
+    except requests.RequestException as e:
+        log(f"  set_progress failed: {e}")
 
 
 def main():
@@ -382,26 +433,82 @@ def main():
             log(f"Missing required env vars: {', '.join(missing)} (or pass --dry-run)")
             sys.exit(1)
 
-    if args.skip_flights:
-        log("=== Flights (skipped) ===")
+    # Real (non-dry-run, non-debug-offer) runs report progress to the `scan_progress` table so
+    # the "Update now" button's progress bar in index.html has something real to poll, rather
+    # than a fake timer. Flights and hotels each get a share of 0-100% proportional to how much
+    # work they actually are; whichever phase is skipped hands its whole share to the other.
+    real_run = not args.dry_run
+    if args.skip_flights and args.skip_hotels:
+        flight_phase, hotel_phase = None, None
+    elif args.skip_flights:
+        flight_phase, hotel_phase = None, (0, 100)
+    elif args.skip_hotels:
+        flight_phase, hotel_phase = (0, 100), None
     else:
-        log("=== Flights ===")
-        flight_rows, scanned_dates = scan_flights(duffel_key, args.dry_run, args.arrival_cutoff,
-                                                    args.departure_window_start, args.departure_window_end, args.target_month)
-        log(f"Found {len(flight_rows)} valid flight combination(s)")
-        if not args.dry_run:
-            delete_stale_flight_rows(scanned_dates, supabase_url, supabase_key)
-            upsert_supabase("flight_prices", flight_rows, "outbound_date,origin_airport,destination_airport",
-                             supabase_url, supabase_key)
+        flight_phase, hotel_phase = (0, 50), (50, 100)
 
-    if args.skip_hotels:
-        log("\n=== Hotels (skipped) ===")
-    else:
-        log("\n=== Hotels ===")
-        hotel_rows = scan_hotels(args.dry_run, supabase_url, supabase_key)
-        log(f"Found {len(hotel_rows)} hotel/date price(s)")
-        if not args.dry_run:
-            upsert_supabase("hotel_prices", hotel_rows, "hotel_name,stay_date", supabase_url, supabase_key)
+    last_sent_pct = [-1]
+
+    def send_progress(pct, message):
+        if not real_run:
+            return
+        pct = max(0, min(100, round(pct)))
+        if pct == last_sent_pct[0]:
+            return
+        last_sent_pct[0] = pct
+        set_progress(supabase_url, supabase_key, status="running", percent=pct, message=message)
+
+    def flight_progress(i, total):
+        if flight_phase is None:
+            return
+        start, end = flight_phase
+        frac = (i / total) if total else 1
+        send_progress(start + frac * (end - start), f"Scanning flights ({i}/{total})")
+
+    def hotel_progress(i, total):
+        if hotel_phase is None:
+            return
+        start, end = hotel_phase
+        frac = (i / total) if total else 1
+        send_progress(start + frac * (end - start), f"Scanning hotels ({i}/{total})")
+
+    if real_run:
+        set_progress(supabase_url, supabase_key, status="running", percent=0,
+                      message="Starting scan", started=True)
+
+    success = False
+    try:
+        if args.skip_flights:
+            log("=== Flights (skipped) ===")
+        else:
+            log("=== Flights ===")
+            flight_rows, scanned_dates = scan_flights(duffel_key, args.dry_run, args.arrival_cutoff,
+                                                        args.departure_window_start, args.departure_window_end,
+                                                        args.target_month, progress_cb=flight_progress)
+            log(f"Found {len(flight_rows)} valid flight combination(s)")
+            if not args.dry_run:
+                delete_stale_flight_rows(scanned_dates, supabase_url, supabase_key)
+                upsert_supabase("flight_prices", flight_rows, "outbound_date,origin_airport,destination_airport",
+                                 supabase_url, supabase_key)
+
+        if args.skip_hotels:
+            log("\n=== Hotels (skipped) ===")
+        else:
+            log("\n=== Hotels ===")
+            hotel_rows = scan_hotels(args.dry_run, supabase_url, supabase_key, progress_cb=hotel_progress)
+            log(f"Found {len(hotel_rows)} hotel/date price(s)")
+            if not args.dry_run:
+                upsert_supabase("hotel_prices", hotel_rows, "hotel_name,stay_date", supabase_url, supabase_key)
+
+        success = True
+    finally:
+        if real_run:
+            if success:
+                set_progress(supabase_url, supabase_key, status="done", percent=100, message="Scan complete")
+            else:
+                exc = sys.exc_info()[1]
+                set_progress(supabase_url, supabase_key, status="failed",
+                             message=(str(exc) or "Unknown error")[:500])
 
     log("\nDone." if not args.dry_run else "\n[dry-run] Done — nothing written, no paid calls made.")
 
