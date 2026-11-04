@@ -855,6 +855,7 @@
   .day-pick-summary{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12.5px;line-height:1.5;color:var(--muted);}
   .day-pick-summary .text-link{flex:none;}
   .plan-trip-missing-days{font-size:12.5px;line-height:1.5;color:var(--muted);margin:0 0 12px;}
+  .plan-trip-result-times{font-size:12px;line-height:1.4;font-weight:600;color:var(--luxury);margin-top:6px;}
 
   .plan-trip-checks{display:flex;gap:18px;margin-bottom:12px;flex-wrap:wrap;}
   .plan-trip-check-group{flex:1;min-width:130px;}
@@ -1423,7 +1424,8 @@
     <h1>Plan next trip</h1>
     <p class="sub">Land in Paris by 11:00, one night, fly back 21:00–23:59 the next day. Mon/Tue/Wed
       prices refresh automatically every Thursday — pick your Mon–Thu days below and tap "Update
-      now" to scan exactly those (costs real money, see the confirmation).</p>
+      now" to scan exactly those (costs real money, see the confirmation). If nothing fits a day,
+      you'll see its closest flights, marked.</p>
     <p class="plan-trip-update-error" id="updateNowError" hidden></p>
 
     <div class="field">
@@ -2855,6 +2857,20 @@
     return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
   }
 
+  // The scan keeps a route's closest flight even when nothing fits these times (pick_best_offer in
+  // scan_trips.py), so a card has to say so. Empty string means it fits. These are the workflow's
+  // default windows; "HH:MM" strings compare correctly as plain text.
+  const LATEST_LANDING = '11:00';
+  const EARLIEST_RETURN = '21:00';
+  function flightTimeNote(f) {
+    const lands = fmtLocalTime(f.outbound_arrival, 'Europe/Paris');
+    const leaves = fmtLocalTime(f.return_departure, 'Europe/Paris');
+    const notes = [];
+    if (lands > LATEST_LANDING) notes.push('lands ' + lands + ', after ' + LATEST_LANDING);
+    if (leaves < EARLIEST_RETURN) notes.push('flies back ' + leaves + ', before ' + EARLIEST_RETURN);
+    return notes.join(' · ');
+  }
+
   // Relative-time label for each option card's "Last updated" — re-run whenever the view
   // renders, not ticked live, since "a few minutes ago" granularity doesn't need a timer.
   function fmtRelativeTime(iso) {
@@ -2888,6 +2904,14 @@
   // rather than "what are the overall cheapest trips, however concentrated on one or two
   // hotels?" — so it gets its own candidate-building pass rather than just filtering the
   // top-15 list down.
+  // Trips that fit the times always come first, then cheapest, then Luton on a tie.
+  function compareTrips(a, b) {
+    if (!a.timeNote !== !b.timeNote) return a.timeNote ? 1 : -1;
+    if (a.total !== b.total) return a.total - b.total;
+    const aLuton = a.flight.origin_airport === 'LTN', bLuton = b.flight.origin_airport === 'LTN';
+    return aLuton === bLuton ? 0 : aLuton ? -1 : 1;
+  }
+
   function computeCheapestPerHotelCandidates(origins, dests) {
     const flightsInScope = flightPricesCache.filter(f =>
       isDayInScope(f.outbound_date) && origins.includes(f.origin_airport) && dests.includes(f.destination_airport)
@@ -2898,14 +2922,13 @@
       flightsInScope.forEach(f => {
         const match = hotelPricesCache.find(h => h.hotel_name === hotel.name && h.stay_date === f.outbound_date);
         if (!match) return;
-        const total = f.total_price + match.nightly_price;
-        if (!best || total < best.total) {
-          best = { flight: f, hotelPrice: match.nightly_price, hotelName: hotel.name, total, hotelUpdatedAt: match.updated_at };
-        }
+        const candidate = { flight: f, hotelPrice: match.nightly_price, hotelName: hotel.name,
+          total: f.total_price + match.nightly_price, hotelUpdatedAt: match.updated_at, timeNote: flightTimeNote(f) };
+        if (!best || compareTrips(candidate, best) < 0) best = candidate;
       });
       if (best) candidates.push(best);
     });
-    candidates.sort((a, b) => a.total - b.total);
+    candidates.sort(compareTrips);
     return candidates;
   }
 
@@ -2914,14 +2937,15 @@
     const empty = el('planTripEmpty');
     wrap.innerHTML = '';
 
-    // Checked against all flights, not just the ones the From/To checkboxes leave in — "nothing
-    // on file" has to mean exactly that, or unticking an airport would wrongly suggest a rescan.
+    // Checked against all flights, not just the ones the From/To checkboxes leave in, or unticking
+    // an airport would wrongly suggest a rescan. This must never claim a day has no flights: all
+    // it knows is that no price is stored. If a scan really comes back empty for a day, the scan's
+    // own finish message says so (scan_summary_message in scan_trips.py).
     const missing = el('planTripMissingDays');
     const missingDays = sortedPickedDays().filter(d => !flightPricesCache.some(f => f.outbound_date === d));
     missing.hidden = !missingDays.length;
-    missing.textContent = 'No flights on file for ' + missingDays.map(fmtShortDate).join(', ') +
-      ' — tap "Update now" to check. If a day stays empty after updating, no flight that day fits ' +
-      'the 11:00 landing and 21:00–23:59 return.';
+    missing.textContent = 'No prices yet for ' + missingDays.map(fmtShortDate).join(', ') +
+      ' — tap "Update now" to search for them.';
 
     const origins = ['SEN', 'LTN', 'STN'].filter(code => el('origin' + code).checked);
     const dests = ['CDG', 'ORY'].filter(code => el('dest' + code).checked);
@@ -2934,7 +2958,8 @@
     if (tierFilter === 'cheapest_per') {
       candidates = computeCheapestPerHotelCandidates(origins, dests).slice(0, 20);
     } else {
-      // The per-date total-cost sort below is the entire joint optimization — for every valid
+      // The per-date total-cost sort below (after flights that fit the times come first) is the
+      // entire joint optimization — for every valid
       // date, total = (flight cost for that date) + (cheapest hotel price for that date, within
       // the current tier filter). Sorting all candidates by that total ascending automatically
       // surfaces whichever date has the best *combined* price; there's no separate step that
@@ -2956,14 +2981,11 @@
             hotelName = cheapest.hotel_name;
             hotelUpdatedAt = cheapest.updated_at;
           }
-          return { flight: f, hotelPrice, hotelName, hotelUpdatedAt, total: f.total_price + (hotelPrice || 0) };
+          return { flight: f, hotelPrice, hotelName, hotelUpdatedAt, total: f.total_price + (hotelPrice || 0), timeNote: flightTimeNote(f) };
         })
-        .sort((a, b) => {
-          if (a.total !== b.total) return a.total - b.total;
-          const aLuton = a.flight.origin_airport === 'LTN', bLuton = b.flight.origin_airport === 'LTN';
-          return aLuton === bLuton ? 0 : aLuton ? -1 : 1;
-        })
-        .slice(0, 15);
+        .sort(compareTrips);
+      // Every day you picked has to show up, so the top-15 cut only applies when nothing's picked.
+      if (!pickedDays.size) candidates = candidates.slice(0, 15);
     }
 
     if (!candidates.length) { empty.style.display = 'block'; return; }
@@ -3001,6 +3023,13 @@
         fmtLocalTime(f.return_departure, 'Europe/Paris') + '–' + fmtLocalTime(f.return_arrival, 'Europe/London') +
         (f.return_airline ? ' · ' + f.return_airline : '');
       card.appendChild(retLeg);
+
+      if (c.timeNote) {
+        const timeNote = document.createElement('div');
+        timeNote.className = 'plan-trip-result-times';
+        timeNote.textContent = 'Closest available: ' + c.timeNote;
+        card.appendChild(timeNote);
+      }
 
       if (c.hotelPrice != null) {
         const tracked = hotelByName[c.hotelName];
@@ -3180,6 +3209,7 @@
       stopScanProgressPolling();
       showScanProgressBar(100, 'Updated');
       setTimeout(() => { hideScanProgressBar(); finishScanUpdate(); }, 1200);
+      if (data.message && data.message !== 'Scan complete') showUpdateError(data.message);
     } else if (data.status === 'failed') {
       endScanWithError('Update failed: ' + (data.message || 'unknown error'));
     }

@@ -106,12 +106,14 @@ def to_aware_iso(naive_str, tz):
     return dt.isoformat()
 
 
-def duffel_search(session, origin, destination, out_date, ret_date, duffel_key, max_retries=4):
-    """POSTs one round-trip offer_request, retrying on 429 with backoff. A first real run hit
-    Duffel's rate limit almost immediately at the original 0.2s pace between calls (225 searches
-    nearly all came back 429) — this is why both the delay in scan_flights() and this retry
-    logic exist now; without the retry, a rate-limited request was just silently dropped."""
-    for attempt in range(max_retries):
+def duffel_search(session, origin, destination, out_date, ret_date, duffel_key, max_attempts=6):
+    """POSTs one round-trip offer_request, retrying on 429 with backoff. Returns the offers, or
+    None if the search itself failed — which is not the same as a search that found nothing, and
+    callers must not treat it as one. A first real run hit Duffel's rate limit almost immediately
+    at the original 0.2s pace between calls (225 searches nearly all came back 429) — this is why
+    both the delay in scan_flights() and this retry logic exist now. Real logs show the limit
+    clearing within about a minute, so the waits here add up to just over that (2+4+8+16+32s)."""
+    for attempt in range(max_attempts):
         resp = session.post(
             DUFFEL_URL,
             headers={
@@ -132,29 +134,30 @@ def duffel_search(session, origin, destination, out_date, ret_date, duffel_key, 
             },
             timeout=30,
         )
-        if resp.status_code == 429:
-            wait = float(resp.headers.get("Retry-After", 2 ** (attempt + 1)))
-            log(f"    rate limited, waiting {wait:.0f}s (attempt {attempt + 1}/{max_retries})")
-            time.sleep(wait)
-            continue
-        break
+        if resp.status_code != 429 or attempt == max_attempts - 1:
+            break
+        wait = float(resp.headers.get("Retry-After", 2 ** (attempt + 1)))
+        log(f"    rate limited, waiting {wait:.0f}s (attempt {attempt + 1}/{max_attempts})")
+        time.sleep(wait)
     if not resp.ok:
         log(f"    Duffel error {resp.status_code} for {origin}->{destination} {out_date}: {resp.text[:200]}")
-        return []
+        return None
     data = resp.json().get("data", {})
     return data.get("offers", [])
 
 
-def offer_is_valid(offer, arrival_cutoff_hhmm, dep_window_start_hhmm, dep_window_end_hhmm):
-    """Checks the pattern: outbound lands by cutoff, return departs within the evening window,
-    both in Europe/Paris local time (the airport the times matter at)."""
+def offer_time_miss(offer, arrival_cutoff_hhmm, dep_window_start_hhmm, dep_window_end_hhmm):
+    """Minutes the offer falls outside the pattern: outbound lands by cutoff, return departs
+    within the evening window, both in Europe/Paris local time (the airport the times matter at).
+    0 means it fits; None means its times couldn't be read."""
     try:
         outbound_segments = offer["slices"][0]["segments"]
         return_segments = offer["slices"][1]["segments"]
+        left_on = datetime.fromisoformat(outbound_segments[0]["departing_at"]).date()
         arrival = datetime.fromisoformat(outbound_segments[-1]["arriving_at"])
         departure = datetime.fromisoformat(return_segments[0]["departing_at"])
     except (KeyError, IndexError, ValueError):
-        return False
+        return None
 
     if arrival.tzinfo is None:
         arrival = arrival.replace(tzinfo=PARIS_TZ)
@@ -163,17 +166,56 @@ def offer_is_valid(offer, arrival_cutoff_hhmm, dep_window_start_hhmm, dep_window
     arrival_paris = arrival.astimezone(PARIS_TZ)
     departure_paris = departure.astimezone(PARIS_TZ)
 
-    cutoff_h, cutoff_m = parse_hhmm(arrival_cutoff_hhmm)
-    if (arrival_paris.hour, arrival_paris.minute) > (cutoff_h, cutoff_m):
-        return False
+    def minutes(hhmm):
+        h, m = parse_hhmm(hhmm)
+        return h * 60 + m
 
-    start_h, start_m = parse_hhmm(dep_window_start_hhmm)
-    end_h, end_m = parse_hhmm(dep_window_end_hhmm)
-    dep_time = (departure_paris.hour, departure_paris.minute)
-    if not (start_h, start_m) <= dep_time <= (end_h, end_m):
-        return False
+    days_later = (arrival_paris.date() - left_on).days  # a connection can land the next day
+    arrival_mins = days_later * 1440 + arrival_paris.hour * 60 + arrival_paris.minute
+    departure_mins = departure_paris.hour * 60 + departure_paris.minute
+    return (max(0, arrival_mins - minutes(arrival_cutoff_hhmm))
+            + max(0, minutes(dep_window_start_hhmm) - departure_mins)
+            + max(0, departure_mins - minutes(dep_window_end_hhmm)))
 
-    return True
+
+def offer_is_valid(offer, arrival_cutoff_hhmm, dep_window_start_hhmm, dep_window_end_hhmm):
+    return offer_time_miss(offer, arrival_cutoff_hhmm, dep_window_start_hhmm, dep_window_end_hhmm) == 0
+
+
+def pick_best_offer(offers, arrival_cutoff, dep_start, dep_end):
+    """The one offer to keep for a route and date: the closest to the pattern, cheapest on a tie,
+    so an offer that fits always wins and the cheapest of those is kept. Offers outside the
+    pattern are kept on purpose. Dropping them made a day look like it had no flights when the
+    only problem was e.g. a 20:45 return against a 21:00 window (confirmed live: every Luton-CDG
+    Monday). Closest beats cheapest there, since the cheap option on those same days came back at
+    10:15 the next morning, which isn't the trip at all. The client marks these from their stored
+    times (flightTimeNote in index.html)."""
+    scored = []
+    for offer in offers:
+        miss = offer_time_miss(offer, arrival_cutoff, dep_start, dep_end)
+        if miss is not None:
+            scored.append((miss, float(offer["total_amount"]), offer))
+    if not scored:
+        return None, None
+    miss, _, offer = min(scored, key=lambda item: item[:2])
+    return offer, miss
+
+
+def scan_summary_message(dates, flight_rows, failed_dates):
+    """What the app shows when a scan finishes. Worded around what this search saw, because an
+    empty result only ever means the airlines Duffel carries returned nothing — never that no
+    flight exists that day."""
+    fmt = lambda days: ", ".join(d.strftime("%a %-d %b") for d in days)
+    found = {row["outbound_date"] for row in flight_rows}
+    empty = [d for d in dates if d.isoformat() not in found and d not in failed_dates]
+    parts = []
+    if empty:
+        parts.append(f"The flight search returned no fares for {fmt(empty)} on the routes it checks. "
+                     "Airlines it doesn't carry can't appear, so flights may still exist.")
+    if failed_dates:
+        parts.append(f"Some searches for {fmt(sorted(failed_dates))} failed after retries, so those "
+                     "days may be missing routes. Tap Update now to try them again.")
+    return " ".join(parts) or "Scan complete"
 
 
 def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target_month,
@@ -184,27 +226,31 @@ def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target
     log(f"Flights: {len(dates)} outbound dates x {len(ORIGIN_AIRPORTS)} origins x "
         f"{len(DESTINATION_AIRPORTS)} destinations = {len(combos)} searches")
 
+    failed_dates = set()
     if dry_run:
         for d, o, dest in combos[:5]:
             log(f"  [dry-run] would search {o} -> {dest}, out {d}, back {d + timedelta(days=1)}")
         if len(combos) > 5:
             log(f"  [dry-run] ...and {len(combos) - 5} more")
-        return rows, dates
+        return rows, dates, failed_dates
 
     session = requests.Session()
     for i, (out_date, origin, dest) in enumerate(combos, 1):
         ret_date = out_date + timedelta(days=1)
         log(f"  [{i}/{len(combos)}] {origin} -> {dest}, out {out_date}, back {ret_date}")
         offers = duffel_search(session, origin, dest, out_date, ret_date, duffel_key)
-        valid_offers = [o for o in offers if offer_is_valid(o, arrival_cutoff, dep_start, dep_end)]
-        if not valid_offers:
+        if offers is None:
+            failed_dates.add(out_date)
+        best, miss = pick_best_offer(offers or [], arrival_cutoff, dep_start, dep_end)
+        if best is None:
             if progress_cb:
                 progress_cb(i, len(combos))
             time.sleep(DUFFEL_REQUEST_DELAY)
             continue
-        cheapest = min(valid_offers, key=lambda o: float(o["total_amount"]))
-        out_seg = cheapest["slices"][0]["segments"]
-        ret_seg = cheapest["slices"][1]["segments"]
+        if miss:
+            log(f"    nothing fits the times, keeping the closest ({miss} min outside)")
+        out_seg = best["slices"][0]["segments"]
+        ret_seg = best["slices"][1]["segments"]
         rows.append({
             "outbound_date": out_date.isoformat(),
             "return_date": ret_date.isoformat(),
@@ -218,13 +264,13 @@ def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target
             "return_departure": to_aware_iso(ret_seg[0]["departing_at"], PARIS_TZ),
             "return_arrival": to_aware_iso(ret_seg[-1]["arriving_at"], UK_TZ),
             "return_airline": ret_seg[0].get("operating_carrier", {}).get("name"),
-            "total_price": float(cheapest["total_amount"]),
-            "currency": cheapest.get("total_currency", "GBP"),
+            "total_price": float(best["total_amount"]),
+            "currency": best.get("total_currency", "GBP"),
         })
         if progress_cb:
             progress_cb(i, len(combos))
         time.sleep(DUFFEL_REQUEST_DELAY)
-    return rows, dates
+    return rows, dates, failed_dates
 
 
 def load_tracked_hotels(supabase_url, supabase_key):
@@ -436,7 +482,7 @@ def main():
         out_date = date.fromisoformat(out_date_str)
         ret_date = out_date + timedelta(days=1)
         session = requests.Session()
-        offers = duffel_search(session, origin, dest, out_date, ret_date, duffel_key)
+        offers = duffel_search(session, origin, dest, out_date, ret_date, duffel_key) or []
         log(f"{len(offers)} offer(s) returned for {origin}->{dest} {out_date}")
         for i, o in enumerate(offers):
             out_segs = o["slices"][0]["segments"]
@@ -500,18 +546,23 @@ def main():
                       message="Starting scan", started=True)
 
     success = False
+    finish_message = "Scan complete"
     try:
         if args.skip_flights:
             log("=== Flights (skipped) ===")
         else:
             log("=== Flights ===")
-            flight_rows, scanned_dates = scan_flights(duffel_key, args.dry_run, args.arrival_cutoff,
-                                                        args.departure_window_start, args.departure_window_end,
-                                                        args.target_month, picked_dates=args.dates,
-                                                        progress_cb=flight_progress)
-            log(f"Found {len(flight_rows)} valid flight combination(s)")
+            flight_rows, scanned_dates, failed_dates = scan_flights(
+                duffel_key, args.dry_run, args.arrival_cutoff, args.departure_window_start,
+                args.departure_window_end, args.target_month, picked_dates=args.dates,
+                progress_cb=flight_progress)
+            log(f"Found {len(flight_rows)} flight combination(s)")
             if not args.dry_run:
-                delete_stale_flight_rows(scanned_dates, supabase_url, supabase_key)
+                # A day with a failed search keeps its old rows: a price from last week beats
+                # wiping that route because Duffel rate-limited us just now.
+                delete_stale_flight_rows([d for d in scanned_dates if d not in failed_dates],
+                                         supabase_url, supabase_key)
+                finish_message = scan_summary_message(scanned_dates, flight_rows, failed_dates)
                 upsert_supabase("flight_prices", flight_rows, "outbound_date,origin_airport,destination_airport",
                                  supabase_url, supabase_key)
 
@@ -529,7 +580,7 @@ def main():
     finally:
         if real_run:
             if success:
-                set_progress(supabase_url, supabase_key, status="done", percent=100, message="Scan complete")
+                set_progress(supabase_url, supabase_key, status="done", percent=100, message=finish_message)
             else:
                 exc = sys.exc_info()[1]
                 set_progress(supabase_url, supabase_key, status="failed",

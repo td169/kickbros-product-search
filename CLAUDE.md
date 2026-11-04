@@ -620,6 +620,23 @@ consistency with the other tokens and in case the policy is tightened later.)
 Scans for the cheapest valid 24-hour Paris trip: land by 11:00, one night, hotel on Rue
 Saint-Honoré between Place de la Concorde and the Louvre, fly back 21:00–23:59 the next day.
 
+**A day with flights must never look like a day without them.** The scan used to keep only offers
+inside those time windows, and the app then said a day had no flights fitting them. That was
+false in practice: every Luton–CDG Monday had plenty of flights, all rejected because the Tuesday
+evening return leaves at 20:45, 15 minutes before the window (confirmed live with `--debug-offer`,
+and a picked-days scan of four Mondays saved nothing at all). So on explicit product instruction:
+- `pick_best_offer` keeps one offer per route and date on every run: whichever is closest to the
+  windows (`offer_time_miss`, minutes outside), cheapest on a tie. An offer that fits always wins,
+  so results for days with a fitting flight are unchanged. It's closest rather than cheapest
+  because the cheapest offer on those same Mondays returned at 10:15 the next morning.
+- `flight_prices` has no "fits" column and needs none: `flightTimeNote` works it out client-side
+  from the stored times, marks the card "Closest available: ...", and `compareTrips` sorts fitting
+  trips first. `LATEST_LANDING`/`EARLIEST_RETURN` there must match the workflow's default windows.
+- The app must not claim no flights exist. A picked day with no stored row only says "No prices
+  yet". If a scan really gets nothing for a day, `scan_summary_message` writes that to
+  `scan_progress.message`, worded around what the search saw (airlines Duffel doesn't carry can't
+  appear, and a single-route probe can legitimately return 0 offers), and the app shows it on finish.
+
 Which days get scanned depends on how the scan was started:
 - **The weekly scheduled run**: outbound **Mon/Tue/Wed only** (`VALID_OUTBOUND_WEEKDAYS` — not Thu,
   since Thursday would put the return on Friday, which the original pattern banned; the original
@@ -654,6 +671,10 @@ Rows from an earlier scan that this run isn't looking at are left alone (not del
 refreshed) — `delete_stale_flight_rows` deletes `outbound_date=in.(...)` for **exactly the dates
 scanned, never a min-to-max range**: picked days can be scattered, so a range would wipe every
 unpicked day between them, and the weekly Mon/Tue/Wed run would wipe a Thursday picked earlier.
+A day where any search failed isn't cleared at all (`failed_dates`): `duffel_search` returns `None`
+for a failed search, distinct from `[]` for one that found nothing, so a rate limit can't wipe
+good rows. Its retries also try again after the final wait, which they originally didn't: logs
+showed searches giving up right after a 16s wait, when the next request a second later succeeded.
 
 **Hotel rows are stored only for Mon/Tue/Wed plus any picked days, even though one scrape returns
 every day in its range at the same cost.** The client reads `hotel_prices` without paging and
@@ -806,10 +827,9 @@ The client (`openPlanTrip`/`renderPlanTripResults` in `index.html`) is a pure re
 "Use this trip" screen: filters `flight_prices` by picked days (`isDayInScope`; nothing picked
 means every upcoming Mon–Thu, not nothing) and the origin/destination checkboxes, joins each
 candidate to the cheapest `hotel_prices` row for that date within the tier filter, sorts by total
-ascending (Luton first on ties), shows the top 15, and "Use this trip" pre-fills the existing
+ascending after fitting trips (Luton first on ties), and "Use this trip" pre-fills the existing
 New Trip modal (`openNewTripModal(prefill)`) rather than creating anything without review. Picked
 days live in `localStorage` (`kickbros_plan_trip_days`, per device, pruned of past days). A picked
 day with no flight row at all is named in `#planTripMissingDays`; this checks the whole flight
 cache, not the checkbox-filtered list, so unticking an airport can't wrongly suggest a paid rescan.
-Valid-only flight rows mean "never scanned" and "scanned, nothing fits" look the same, so the
-message covers both rather than claiming either.
+The top-15 cut only applies with nothing picked, so every picked day with a price always shows.

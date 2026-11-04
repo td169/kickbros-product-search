@@ -8,6 +8,15 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ## 2026-11-04 — Pick your own days, and "Update now" fixed
 
+### Fix: picked days wrongly said there were no flights
+
+The scan threw away any flight outside the 11:00 landing and 21:00–23:59 return, then the app said
+that day had no flights. That wasn't true: Luton to CDG on Mondays has plenty, but the Tuesday
+evening flight back leaves at 20:45, 15 minutes too early, so all of them were dropped. Every route
+and day now keeps its closest flight. It's marked "Closest available" with what's off about it, and
+flights that fit your times still come first. The app no longer says a day has no flights. Rate
+limits from the flight search also get retried properly now, and can't wipe a day's saved prices.
+
 ### Fix: "Update now" looked like it did nothing
 
 Tapping it did start a real scan, but the screen read the *previous* scan's "finished" status
