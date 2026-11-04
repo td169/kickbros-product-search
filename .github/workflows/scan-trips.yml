@@ -10,6 +10,10 @@ on:
         description: "Scan a specific month (YYYY-MM) instead of the default rolling window"
         required: false
         type: string
+      dates:
+        description: "Scan these exact outbound days (YYYY-MM-DD, comma-separated) instead of the default Mon/Tue/Wed window. Sent by the app's Update now button"
+        required: false
+        type: string
       arrival_cutoff:
         description: "Latest acceptable outbound arrival time, Europe/Paris (HH:MM)"
         required: false
@@ -74,6 +78,7 @@ jobs:
         run: |
           python3 scripts/scan_trips.py \
             ${{ inputs.target_month && format('--target-month {0}', inputs.target_month) || '' }} \
+            ${{ inputs.dates && format('--dates {0}', inputs.dates) || '' }} \
             --arrival-cutoff "${{ inputs.arrival_cutoff || '11:00' }}" \
             --departure-window-start "${{ inputs.departure_window_start || '21:00' }}" \
             --departure-window-end "${{ inputs.departure_window_end || '23:59' }}" \

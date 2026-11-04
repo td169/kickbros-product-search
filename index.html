@@ -847,6 +847,15 @@
   }
   .plan-trip-result-updated{font-size:10.5px;color:var(--muted-2);text-align:right;margin-top:8px;}
 
+  /* "days you can fly out" picker — reuses the Trips calendar's .cal-* look */
+  .day-pick-month{font-size:15px;font-weight:800;color:var(--ink);min-width:130px;text-align:center;}
+  .cal-nav:disabled{opacity:.35;cursor:default;}
+  .cal-day.pickable{cursor:pointer;}
+  .cal-day.picked .cal-day-num{background:var(--profit);color:#fff;}
+  .day-pick-summary{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12.5px;line-height:1.5;color:var(--muted);}
+  .day-pick-summary .text-link{flex:none;}
+  .plan-trip-missing-days{font-size:12.5px;line-height:1.5;color:var(--muted);margin:0 0 12px;}
+
   .plan-trip-checks{display:flex;gap:18px;margin-bottom:12px;flex-wrap:wrap;}
   .plan-trip-check-group{flex:1;min-width:130px;}
   .plan-trip-check-label{
@@ -1412,14 +1421,24 @@
       <button type="button" class="btn-pill plan-trip-update-btn" id="updateNowBtn">Update now</button>
     </div>
     <h1>Plan next trip</h1>
-    <p class="sub">Land in Paris by 11:00, one night, fly back 21:00–23:59 the next day. Outbound
-      Mon/Tue/Wed only. Prices refresh automatically every Thursday — tap "Update now" above for
-      an on-demand refresh (costs real money, see the confirmation).</p>
+    <p class="sub">Land in Paris by 11:00, one night, fly back 21:00–23:59 the next day. Mon/Tue/Wed
+      prices refresh automatically every Thursday — pick your Mon–Thu days below and tap "Update
+      now" to scan exactly those (costs real money, see the confirmation).</p>
     <p class="plan-trip-update-error" id="updateNowError" hidden></p>
 
     <div class="field">
-      <label>Month</label>
-      <input type="month" id="planTripMonth">
+      <label>Days you can fly out <span class="hint">Mon–Thu, back the next day</span></label>
+      <div class="cal-header">
+        <button type="button" class="cal-nav" id="dayPickPrev" aria-label="Previous month">‹</button>
+        <div class="day-pick-month" id="dayPickMonth"></div>
+        <button type="button" class="cal-nav" id="dayPickNext" aria-label="Next month">›</button>
+      </div>
+      <div class="cal-weekdays"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div>
+      <div class="cal-grid" id="dayPickGrid"></div>
+      <div class="day-pick-summary">
+        <span id="dayPickSummary"></span>
+        <button type="button" class="text-link" id="dayPickClear">Clear</button>
+      </div>
     </div>
 
     <div class="plan-trip-checks">
@@ -1446,9 +1465,10 @@
       </div>
     </div>
 
+    <p class="plan-trip-missing-days" id="planTripMissingDays" hidden></p>
     <div id="planTripResults"></div>
-    <p class="empty-state" id="planTripEmpty">No scanned prices yet for these filters — results
-      refresh automatically every Thursday, or tap "Update now" above for an on-demand scan.</p>
+    <p class="empty-state" id="planTripEmpty">No prices yet for these days and filters — tap
+      "Update now" above to scan them.</p>
   </main>
 
   <div class="modal-overlay" id="newTripOverlay">
@@ -1504,7 +1524,7 @@
         <h3>Update prices now?</h3>
         <button type="button" class="modal-close" id="updateNowConfirmClose" aria-label="Close">×</button>
       </div>
-      <p class="modal-text">Are you sure? (This costs credits and money)</p>
+      <p class="modal-text" id="updateNowConfirmText"></p>
       <div class="modal-actions">
         <button type="button" class="btn-secondary" id="updateNowConfirmCancel">Cancel</button>
         <button type="button" class="btn-primary" id="updateNowConfirmYes">Yes, update</button>
@@ -2658,15 +2678,18 @@
   const PLAN_TRIP_AIRPORT_NAMES = { SEN: 'Southend', LTN: 'Luton', STN: 'Stansted', CDG: 'Paris CDG', ORY: 'Orly' };
   const TIER_LABEL = { luxury: 'Luxury', standard: 'Standard' };
 
+  // Old rows are never deleted, and PostgREST caps an unpaged read at 1000 rows by default —
+  // reading past dates too could silently push real upcoming prices out of the result, which
+  // would show up as a trip with its hotel missing rather than as any kind of error.
   async function loadFlightPrices() {
     if (!db) return [];
-    const { data, error } = await db.from('flight_prices').select('*');
+    const { data, error } = await db.from('flight_prices').select('*').gte('outbound_date', addDaysStr(1));
     if (error) { console.error('loadFlightPrices', error); return []; }
     return data || [];
   }
   async function loadHotelPrices() {
     if (!db) return [];
-    const { data, error } = await db.from('hotel_prices').select('*');
+    const { data, error } = await db.from('hotel_prices').select('*').gte('stay_date', addDaysStr(1));
     if (error) { console.error('loadHotelPrices', error); return []; }
     return data || [];
   }
@@ -2686,11 +2709,8 @@
     filterPanel.classList.remove('open');
     el('tripsDock').classList.remove('show');
 
-    if (!el('planTripMonth').value) {
-      const next = new Date();
-      next.setMonth(next.getMonth() + 1);
-      el('planTripMonth').value = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0');
-    }
+    prunePickedDays();
+    renderDayPicker();
 
     loadFlightPrices().then(rows => {
       flightPricesCache = rows;
@@ -2704,6 +2724,123 @@
 
     if (!scanInProgress) checkScanAlreadyRunning();
   }
+
+  // ---- "days you can fly out" picker ----
+  // Tomorrow is the earliest day the scan can look at. 60 days is the furthest out the hotel
+  // scrape has been run live (price_n_days=61), so it's the limit rather than a guess at more.
+  const PLAN_TRIP_DAYS_KEY = 'kickbros_plan_trip_days';
+  const PICKABLE_DAYS_AHEAD = 60;
+  const FLIGHT_SEARCHES_PER_DAY = 6; // 3 origins x 2 destinations, regardless of the checkboxes
+  // Only Mon-Thu trips are ever allowed: this one rule drives the calendar, the results filter
+  // and what "Update now" scans. Date#getDay() numbering, so Sunday is 0.
+  const ALLOWED_OUTBOUND_WEEKDAYS = new Set([1, 2, 3, 4]);
+  const FULL_SCAN_DAYS_AHEAD = 45; // what "Update now" covers with nothing picked
+  let pickedDays = new Set();
+  let dayPickMonth = null; // first of the month being shown
+  try {
+    pickedDays = new Set(JSON.parse(localStorage.getItem(PLAN_TRIP_DAYS_KEY)) || []);
+  } catch (e) {}
+
+  function addDaysStr(n) {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return ymd(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  function isAllowedWeekday(dateStr) {
+    return ALLOWED_OUTBOUND_WEEKDAYS.has(new Date(dateStr + 'T00:00:00').getDay());
+  }
+  function isPickableDay(dateStr) {
+    return isAllowedWeekday(dateStr) && dateStr >= addDaysStr(1) && dateStr <= addDaysStr(PICKABLE_DAYS_AHEAD);
+  }
+  function savePickedDays() {
+    try { localStorage.setItem(PLAN_TRIP_DAYS_KEY, JSON.stringify(sortedPickedDays())); } catch (e) {}
+  }
+  function sortedPickedDays() { return [...pickedDays].sort(); }
+  function prunePickedDays() {
+    pickedDays = new Set(sortedPickedDays().filter(isPickableDay));
+    savePickedDays();
+  }
+  // Nothing picked isn't "show nothing" — it shows the cheapest of every allowed upcoming day.
+  function isDayInScope(dateStr) {
+    return pickedDays.size ? pickedDays.has(dateStr) : dateStr >= addDaysStr(1) && isAllowedWeekday(dateStr);
+  }
+  // "Update now" always sends exact days, so the app's Mon-Thu rule applies here without touching
+  // the scheduled run's own Mon/Tue/Wed default in scan_trips.py.
+  function updateNowDays() {
+    const picked = sortedPickedDays();
+    if (picked.length) return picked;
+    const days = [];
+    for (let i = 1; i <= FULL_SCAN_DAYS_AHEAD; i++) {
+      const dateStr = addDaysStr(i);
+      if (isAllowedWeekday(dateStr)) days.push(dateStr);
+    }
+    return days;
+  }
+
+  function renderDayPicker() {
+    const max = addDaysStr(PICKABLE_DAYS_AHEAD);
+    const min = addDaysStr(1);
+    if (!dayPickMonth) {
+      const start = sortedPickedDays()[0] || min;
+      dayPickMonth = new Date(start.slice(0, 7) + '-01T00:00:00');
+    }
+    const year = dayPickMonth.getFullYear(), month = dayPickMonth.getMonth();
+    el('dayPickMonth').textContent = dayPickMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    el('dayPickPrev').disabled = ymd(year, month, 1) <= min;
+    const nextMonth = new Date(year, month + 1, 1);
+    el('dayPickNext').disabled = ymd(nextMonth.getFullYear(), nextMonth.getMonth(), 1) > max;
+
+    const grid = el('dayPickGrid');
+    grid.innerHTML = '';
+    const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7; // Monday-first
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    for (let i = 0; i < firstWeekday; i++) grid.appendChild(document.createElement('span'));
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = ymd(year, month, day);
+      const pickable = isPickableDay(dateStr);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'cal-day' + (pickable ? ' pickable' : ' muted') + (pickedDays.has(dateStr) ? ' picked' : '');
+      btn.disabled = !pickable;
+      btn.dataset.date = dateStr;
+      if (pickable) {
+        btn.setAttribute('aria-pressed', String(pickedDays.has(dateStr)));
+        btn.addEventListener('click', () => {
+          if (pickedDays.has(dateStr)) pickedDays.delete(dateStr);
+          else pickedDays.add(dateStr);
+          savePickedDays();
+          renderDayPicker();
+          renderPlanTripResults();
+        });
+      }
+      const num = document.createElement('span');
+      num.className = 'cal-day-num';
+      num.textContent = day;
+      btn.appendChild(num);
+      grid.appendChild(btn);
+    }
+
+    const n = pickedDays.size;
+    el('dayPickSummary').textContent = n
+      ? n + (n === 1 ? ' day: ' : ' days: ') + sortedPickedDays().map(fmtShortDate).join(', ')
+      : 'No days picked — showing the cheapest Mon–Thu trips scanned so far.';
+    el('dayPickClear').style.display = n ? '' : 'none';
+  }
+
+  el('dayPickPrev').addEventListener('click', () => {
+    dayPickMonth = new Date(dayPickMonth.getFullYear(), dayPickMonth.getMonth() - 1, 1);
+    renderDayPicker();
+  });
+  el('dayPickNext').addEventListener('click', () => {
+    dayPickMonth = new Date(dayPickMonth.getFullYear(), dayPickMonth.getMonth() + 1, 1);
+    renderDayPicker();
+  });
+  el('dayPickClear').addEventListener('click', () => {
+    pickedDays = new Set();
+    savePickedDays();
+    renderDayPicker();
+    renderPlanTripResults();
+  });
 
   // Matches how every airline/travel site shows a flight: departure in the origin airport's
   // own local time, arrival in the destination airport's — not everything converted to one
@@ -2746,14 +2883,14 @@
 
   // "Cheapest Per" mode: one card per tracked hotel (every hotel gets a chance to show up,
   // regardless of tier — but only once each) using that specific hotel's own cheapest
-  // (flight + hotel) combo within the current month/origin/destination filters. This is a
+  // (flight + hotel) combo within the current day/origin/destination filters. This is a
   // different question from the normal top-15 view — "what's the best deal at each property?"
   // rather than "what are the overall cheapest trips, however concentrated on one or two
   // hotels?" — so it gets its own candidate-building pass rather than just filtering the
   // top-15 list down.
-  function computeCheapestPerHotelCandidates(month, origins, dests) {
+  function computeCheapestPerHotelCandidates(origins, dests) {
     const flightsInScope = flightPricesCache.filter(f =>
-      (!month || f.outbound_date.startsWith(month)) && origins.includes(f.origin_airport) && dests.includes(f.destination_airport)
+      isDayInScope(f.outbound_date) && origins.includes(f.origin_airport) && dests.includes(f.destination_airport)
     );
     const candidates = [];
     trackedHotelsCache.forEach(hotel => {
@@ -2777,7 +2914,15 @@
     const empty = el('planTripEmpty');
     wrap.innerHTML = '';
 
-    const month = el('planTripMonth').value; // "YYYY-MM"
+    // Checked against all flights, not just the ones the From/To checkboxes leave in — "nothing
+    // on file" has to mean exactly that, or unticking an airport would wrongly suggest a rescan.
+    const missing = el('planTripMissingDays');
+    const missingDays = sortedPickedDays().filter(d => !flightPricesCache.some(f => f.outbound_date === d));
+    missing.hidden = !missingDays.length;
+    missing.textContent = 'No flights on file for ' + missingDays.map(fmtShortDate).join(', ') +
+      ' — tap "Update now" to check. If a day stays empty after updating, no flight that day fits ' +
+      'the 11:00 landing and 21:00–23:59 return.';
+
     const origins = ['SEN', 'LTN', 'STN'].filter(code => el('origin' + code).checked);
     const dests = ['CDG', 'ORY'].filter(code => el('dest' + code).checked);
     const tierFilter = currentHotelFilter; // all/standard/luxury/cheapest_per
@@ -2787,7 +2932,7 @@
 
     let candidates;
     if (tierFilter === 'cheapest_per') {
-      candidates = computeCheapestPerHotelCandidates(month, origins, dests).slice(0, 20);
+      candidates = computeCheapestPerHotelCandidates(origins, dests).slice(0, 20);
     } else {
       // The per-date total-cost sort below is the entire joint optimization — for every valid
       // date, total = (flight cost for that date) + (cheapest hotel price for that date, within
@@ -2796,7 +2941,7 @@
       // finds the single cheapest hotel night and then searches for a matching flight, or vice
       // versa — that would be redundant with what sorting the sums already does.
       candidates = flightPricesCache
-        .filter(f => (!month || f.outbound_date.startsWith(month)) && origins.includes(f.origin_airport) && dests.includes(f.destination_airport))
+        .filter(f => isDayInScope(f.outbound_date) && origins.includes(f.origin_airport) && dests.includes(f.destination_airport))
         .map(f => {
           const matches = hotelPricesCache.filter(h => {
             if (h.stay_date !== f.outbound_date) return false;
@@ -2936,7 +3081,7 @@
 
   el('planTripBtn').addEventListener('click', openPlanTrip);
   el('planTripBack').addEventListener('click', () => switchTab('trips'));
-  ['planTripMonth', 'originSEN', 'originLTN', 'originSTN', 'destCDG', 'destORY'].forEach(id => {
+  ['originSEN', 'originLTN', 'originSTN', 'destCDG', 'destORY'].forEach(id => {
     el(id).addEventListener('change', renderPlanTripResults);
   });
 
@@ -2954,6 +3099,29 @@
   const GITHUB_WORKFLOW_FILE = 'scan-trips.yml';
   let scanInProgress = false;
   let scanProgressPollTimer = null;
+  // scan_progress keeps the previous run's final status until the next run's script starts, which
+  // takes a minute or so after the dispatch. Reading it straight after dispatching therefore
+  // finds last week's "done" — this is what made "Update now" flash "Updated" and vanish while
+  // the real scan carried on unseen. So a dispatch remembers the row's started_at, and anything
+  // read with that same started_at still belongs to the old run. Comparing the row to itself
+  // rather than to Date.now() keeps this immune to a wrong device clock.
+  let awaitingScanStart = null; // { baselineStartedAt, deadline }
+  const SCAN_START_TIMEOUT_MS = 5 * 60 * 1000;
+  // Progress is written every few seconds to a minute or so, so this much silence means the run
+  // died without reaching the script's own `finally` (e.g. cancelled from the Actions tab).
+  const SCAN_STALE_MS = 10 * 60 * 1000;
+
+  function isScanAlive(row) {
+    return row.status === 'running' && Date.now() - new Date(row.updated_at).getTime() < SCAN_STALE_MS;
+  }
+  function endScanWithError(msg) {
+    stopScanProgressPolling();
+    awaitingScanStart = null;
+    scanInProgress = false;
+    el('updateNowBtn').disabled = false;
+    hideScanProgressBar();
+    showUpdateError(msg);
+  }
 
   function showUpdateError(msg) {
     const box = el('updateNowError');
@@ -2991,19 +3159,29 @@
   async function pollScanProgress() {
     if (!db) { stopScanProgressPolling(); return; }
     const { data, error } = await db.from('scan_progress').select('*').eq('id', 1).single();
+    if (!scanProgressPollTimer) return; // polling ended while this read was in flight
+    if (awaitingScanStart) {
+      if (error || !data || data.started_at === awaitingScanStart.baselineStartedAt) {
+        if (Date.now() > awaitingScanStart.deadline) {
+          endScanWithError('The scan was requested but hasn\'t started after 5 minutes. Check the Actions tab on GitHub before trying again, so you don\'t pay for it twice.');
+        }
+        return;
+      }
+      awaitingScanStart = null;
+    }
     if (error || !data) return;
     if (data.status === 'running') {
+      if (!isScanAlive(data)) {
+        endScanWithError('The scan stopped reporting progress and looks like it died. Prices were not fully updated.');
+        return;
+      }
       showScanProgressBar(data.percent || 0, 'Updating... ' + (data.percent || 0) + '%');
     } else if (data.status === 'done') {
       stopScanProgressPolling();
       showScanProgressBar(100, 'Updated');
       setTimeout(() => { hideScanProgressBar(); finishScanUpdate(); }, 1200);
     } else if (data.status === 'failed') {
-      stopScanProgressPolling();
-      scanInProgress = false;
-      el('updateNowBtn').disabled = false;
-      hideScanProgressBar();
-      showUpdateError('Update failed: ' + (data.message || 'unknown error'));
+      endScanWithError('Update failed: ' + (data.message || 'unknown error'));
     }
   }
   function startScanProgressPolling() {
@@ -3019,7 +3197,7 @@
     if (!db) return;
     const { data, error } = await db.from('scan_progress').select('*').eq('id', 1).single();
     if (error || !data) return;
-    if (data.status === 'running') {
+    if (isScanAlive(data)) {
       scanInProgress = true;
       el('updateNowBtn').disabled = true;
       showScanProgressBar(data.percent || 0, 'Updating... ' + (data.percent || 0) + '%');
@@ -3027,7 +3205,7 @@
     }
   }
 
-  async function dispatchScanWorkflow(token) {
+  async function dispatchScanWorkflow(token, days) {
     const resp = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW_FILE}/dispatches`,
       {
@@ -3037,7 +3215,7 @@
           Accept: 'application/vnd.github+json',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ ref: 'main' }),
+        body: JSON.stringify({ ref: 'main', inputs: { dates: days.join(',') } }),
       }
     );
     if (!resp.ok) {
@@ -3054,21 +3232,59 @@
       showUpdateError('Add a GitHub token in Settings to use "Update now".');
       return;
     }
+    if (!db) {
+      showUpdateError('Add your Supabase project URL and anon key in Settings to use "Update now".');
+      return;
+    }
     el('updateNowBtn').disabled = true;
+    // Read before dispatching: without this baseline there's no telling the new run's progress
+    // from the old run's leftovers, so don't spend money on a scan nobody could follow.
+    const { data: before, error: beforeError } = await db.from('scan_progress').select('*').eq('id', 1).single();
+    if (beforeError || !before) {
+      el('updateNowBtn').disabled = false;
+      showUpdateError('Could not check the scan status, so the update wasn\'t started: ' +
+        (beforeError ? beforeError.message : 'no status row found'));
+      return;
+    }
+    // Another device started one since this screen opened — follow it rather than pay twice.
+    if (isScanAlive(before)) {
+      scanInProgress = true;
+      showScanProgressBar(before.percent || 0, 'Updating... ' + (before.percent || 0) + '%');
+      startScanProgressPolling();
+      return;
+    }
+    prunePickedDays();
+    renderDayPicker();
     try {
-      await dispatchScanWorkflow(token);
+      await dispatchScanWorkflow(token, updateNowDays());
     } catch (e) {
       el('updateNowBtn').disabled = false;
       showUpdateError('Could not start the update: ' + e.message);
       return;
     }
     scanInProgress = true;
-    showScanProgressBar(0, 'Updating... 0%');
+    awaitingScanStart = { baselineStartedAt: before.started_at, deadline: Date.now() + SCAN_START_TIMEOUT_MS };
+    showScanProgressBar(0, 'Starting scan...');
     startScanProgressPolling();
+  }
+
+  // Timings are from real runs: about 5s per flight search, about 6 minutes for all the hotels.
+  function updateNowConfirmText() {
+    const days = updateNowDays();
+    const warning = ' Are you sure? (This costs credits and money)';
+    const mins = Math.ceil(days.length * FLIGHT_SEARCHES_PER_DAY * 5 / 60) + 7;
+    if (!pickedDays.size) {
+      return 'No days picked, so this scans every Mon–Thu in the next ' + FULL_SCAN_DAYS_AHEAD + ' days, plus hotel prices, about ' + mins + ' minutes.' + warning;
+    }
+    return 'Scans flights for ' + days.map(fmtShortDate).join(', ') + ', plus hotel prices, about ' + mins + ' minutes.' + warning;
   }
 
   el('updateNowBtn').addEventListener('click', () => {
     if (scanInProgress) return;
+    prunePickedDays();
+    renderDayPicker();
+    renderPlanTripResults();
+    el('updateNowConfirmText').textContent = updateNowConfirmText();
     el('updateNowConfirmOverlay').classList.add('open');
   });
   function closeUpdateNowConfirm() { el('updateNowConfirmOverlay').classList.remove('open'); }

@@ -618,10 +618,22 @@ consistency with the other tokens and in case the policy is tightened later.)
 ### "Plan next trip" (Trips tab → `#planTripBtn`)
 
 Scans for the cheapest valid 24-hour Paris trip: land by 11:00, one night, hotel on Rue
-Saint-Honoré between Place de la Concorde and the Louvre, fly back 21:00–23:59 the next day,
-outbound **Mon/Tue/Wed only** (not Thu — Thursday would put the return on Friday, which the
-pattern also bans; the original spec's own wording conflicted on this, resolved by dropping
-Thursday from the outbound set so every rule holds without exception).
+Saint-Honoré between Place de la Concorde and the Louvre, fly back 21:00–23:59 the next day.
+
+Which days get scanned depends on how the scan was started:
+- **The weekly scheduled run**: outbound **Mon/Tue/Wed only** (`VALID_OUTBOUND_WEEKDAYS` — not Thu,
+  since Thursday would put the return on Friday, which the original pattern banned; the original
+  spec's own wording conflicted on this, resolved by dropping Thursday from the outbound set).
+- **"Update now"**: **Mon–Thu**, always as exact days in the workflow's `dates` input → `--dates`:
+  the days picked in the screen's calendar, or with none picked every Mon–Thu in the next 45 days.
+  Mon–Thu is an explicit product rule that overrides the old no-Friday-return ban for this feature.
+  `ALLOWED_OUTBOUND_WEEKDAYS` in `index.html` is the single source for it, driving the calendar
+  (`isPickableDay`, Fri–Sun can't be tapped), the results filter (`isDayInScope`) and what gets
+  scanned (`updateNowDays`). `--dates` itself takes any date, so a manual `workflow_dispatch` isn't
+  limited by this. It stays a 1-night trip, so a picked day always means "fly out this day, back
+  the next". The scheduled run stays on Mon/Tue/Wed: "Update now" is the manual tool, and flights
+  are paid per search (6 per day scanned). So a Thursday has no prices until "Update now" scans
+  it, and afterwards just ages (the "Last updated" label shows how old) until scanned again.
 
 **This is entirely server-side — do not try to call Duffel or scrape Booking.com from
 `index.html`.** Confirmed empirically: `api.duffel.com/air/offer_requests` sends no
@@ -632,14 +644,24 @@ Python runtime and a key (`SCRAPFLY_KEY`) that must never reach the browser.
 
 Both run in `.github/workflows/scan-trips.yml` (scheduled weekly, every Thursday 06:00 UTC —
 cron `0 6 * * 4`, replacing an earlier every-3-days cadence — plus `workflow_dispatch` for an
-on-demand run with optional `target_month`/cutoff-time inputs, or triggered on demand from the
-app itself via the "Update now" button below) via `scripts/scan_trips.py`, writing to two
-Supabase tables the client only ever reads from. Every run only covers `ROLLING_WINDOW_DAYS`
-(45) days ahead — there's no separate monthly/third-month pass. Rows already in the tables
-from an earlier scan that are now outside that 45-day window are left alone (not deleted, just
-not refreshed) — `delete_stale_flight_rows` only clears rows inside the *currently scanned*
-date range, specifically so a run with a narrower window than a previous one can't wipe out
-still-valid older data it simply isn't looking at this time:
+on-demand run with optional `dates`/`target_month`/cutoff-time inputs, or triggered on demand
+from the app itself via the "Update now" button below) via `scripts/scan_trips.py`, writing to
+two Supabase tables the client only ever reads from. A run without `--dates` only covers
+`ROLLING_WINDOW_DAYS` (45) days ahead — there's no separate monthly/third-month pass; the hotel
+scrape stretches to the furthest picked day when there are `--dates`, and the calendar stops at
+60 days ahead because `price_n_days=61` is the furthest that scrape has actually been run live.
+Rows from an earlier scan that this run isn't looking at are left alone (not deleted, just not
+refreshed) — `delete_stale_flight_rows` deletes `outbound_date=in.(...)` for **exactly the dates
+scanned, never a min-to-max range**: picked days can be scattered, so a range would wipe every
+unpicked day between them, and the weekly Mon/Tue/Wed run would wipe a Thursday picked earlier.
+
+**Hotel rows are stored only for Mon/Tue/Wed plus any picked days, even though one scrape returns
+every day in its range at the same cost.** The client reads `hotel_prices` without paging and
+PostgREST caps an unpaged read at 1000 rows by default, so storing every day (18 hotels x 61 days
+= 1098) would silently drop some rows, which shows up as a trip with its hotel missing and a
+too-low "flight-only" total rather than as any kind of error. `loadHotelPrices`/`loadFlightPrices`
+also only read from tomorrow onwards (`.gte(...)`) for the same reason, since past rows are never
+deleted and would otherwise keep eating into that cap:
 
 ```sql
 create table flight_prices (
@@ -699,7 +721,8 @@ The Plan-next-trip screen has an "Update now" button (top of the view) for trigg
 on demand instead of waiting for Thursday. Clicking it always shows a confirm modal first ("Are
 you sure? (This costs credits and money)") — nothing fires on a bare click. On "Yes", the
 client POSTs straight to `POST /repos/td169/kickbros-product-search/actions/workflows/scan-trips.yml/dispatches`
-(`{ "ref": "main" }`) using the GitHub PAT from Settings
+(`{ "ref": "main", "inputs": { "dates": ... } }`; the modal spells out which days will be
+scanned) using the GitHub PAT from Settings
 (`kickbros_github_token`) — GitHub's REST API sends CORS headers on all public endpoints, so
 this works directly from the browser, no server-side relay needed, same as every other
 third-party call in this app. Missing token → the button shows an inline message pointing at
@@ -732,6 +755,25 @@ still ends in `status: 'failed'` with the exception message — never stuck on `
 which would otherwise leave the app's progress bar spinning indefinitely with no way to tell
 the difference between "still working" and "died silently."
 
+**`scan_progress` keeps the previous run's final status until the next run's script actually
+starts, about a minute after the dispatch** (the runner has to boot and install dependencies
+first). The client used to poll straight after dispatching, so it read last week's `done` on the
+first poll: the bar flashed "Updated" and vanished within a second and the button re-enabled,
+while the real scan carried on unseen and its results never got loaded — this looked exactly like
+"Update now does nothing", while inviting a second paid click. So `startScanUpdate` reads the row
+*before* dispatching and remembers its `started_at` (`awaitingScanStart`), and `pollScanProgress`
+treats anything with that same `started_at` as still belonging to the old run. It compares the row
+to itself rather than to `Date.now()`, so a wrong device clock can't break it. Related rules, all
+in the same code:
+- If that first read fails, nothing is dispatched: without a baseline the scan couldn't be followed.
+- A run that hasn't started within 5 minutes (`SCAN_START_TIMEOUT_MS`) ends with a message telling
+  the user to check the Actions tab before retrying, rather than spinning forever.
+- `running` only counts if `updated_at` is under 10 minutes old (`isScanAlive`): a run killed from
+  outside (e.g. cancelled in the Actions tab) never reaches the script's `finally`, and would
+  otherwise lock the button for good.
+- A poll discards its result if polling stopped while its read was in flight, or a late read of
+  the old `done` would bring the false "Updated" straight back.
+
 Client-side, `scan_progress` is also how `openPlanTrip()` detects a scan already running when
 the screen opens (from another device, or a manual `workflow_dispatch` from the Actions tab) —
 deliberately read from this table rather than the GitHub Actions run-status API, since it's the
@@ -761,7 +803,13 @@ scheduled scan, so a client-side time picker wouldn't change anything already co
 manually-triggered `workflow_dispatch` run can override them without any UI for it.
 
 The client (`openPlanTrip`/`renderPlanTripResults` in `index.html`) is a pure read + rank +
-"Use this trip" screen: filters `flight_prices` by month/origin/destination checkboxes, joins
-each candidate to the cheapest (or a pinned) `hotel_prices` row for that date, sorts by total
-ascending (Luton first on ties), shows the top 8, and "Use this trip" pre-fills the existing
-New Trip modal (`openNewTripModal(prefill)`) rather than creating anything without review.
+"Use this trip" screen: filters `flight_prices` by picked days (`isDayInScope`; nothing picked
+means every upcoming Mon–Thu, not nothing) and the origin/destination checkboxes, joins each
+candidate to the cheapest `hotel_prices` row for that date within the tier filter, sorts by total
+ascending (Luton first on ties), shows the top 15, and "Use this trip" pre-fills the existing
+New Trip modal (`openNewTripModal(prefill)`) rather than creating anything without review. Picked
+days live in `localStorage` (`kickbros_plan_trip_days`, per device, pruned of past days). A picked
+day with no flight row at all is named in `#planTripMissingDays`; this checks the whole flight
+cache, not the checkbox-filtered list, so unticking an airport can't wrongly suggest a paid rescan.
+Valid-only flight rows mean "never scanned" and "scanned, nothing fits" look the same, so the
+message covers both rather than claiming either.

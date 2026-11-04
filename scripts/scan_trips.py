@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Scheduled scan for "Plan next trip": finds the cheapest valid 24-hour Paris trip pattern
-(land by 11:00, one night, depart 21:00-23:59 the next day, outbound Mon/Tue/Wed only) and
-writes results to Supabase for the app's Trips tab to read and rank.
+Scan for "Plan next trip": finds the cheapest valid 24-hour Paris trip pattern (land by 11:00,
+one night, depart 21:00-23:59 the next day) and writes results to Supabase for the app's Trips
+tab to read and rank. The scheduled run covers outbound Mon/Tue/Wed only; an "Update now" from the
+app passes --dates with exact days instead (the app only allows Mon-Thu, see isPickableDay there).
 
 This is server-side only — see CLAUDE.md for why (Duffel's API doesn't send CORS headers, so
 it can't be called from the browser; the hotel scrape has the same constraint for a different
@@ -33,9 +34,9 @@ import requests
 sys.path.insert(0, str(Path(__file__).parent / "vendor"))
 
 # ---- fixed business rules (see CLAUDE.md — do not make these generic) ----
-# Outbound Mon(0)/Tue(1)/Wed(2) only — Thursday would put the return on Friday, which the
-# pattern also bans. Resolved this way after finding the original spec's own rules conflicted;
-# see CLAUDE.md's "Plan next trip" section for the full reasoning.
+# The default scan's outbound days: Mon(0)/Tue(1)/Wed(2) — Thursday would put the return on
+# Friday, which the original pattern banned. "Update now" (--dates) deliberately bypasses this,
+# since the app allows Mon-Thu there; see CLAUDE.md's "Plan next trip" section for the reasoning.
 VALID_OUTBOUND_WEEKDAYS = {0, 1, 2}
 PARIS_TZ = ZoneInfo("Europe/Paris")
 UK_TZ = ZoneInfo("Europe/London")
@@ -77,6 +78,12 @@ def valid_outbound_dates(start: date, days: int, target_month: Optional[str]):
             d = start + timedelta(days=i)
             if d.weekday() in VALID_OUTBOUND_WEEKDAYS:
                 yield d
+
+
+def parse_dates_arg(value: str):
+    """--dates: comma-separated YYYY-MM-DD outbound days. A malformed date raises ValueError,
+    which argparse turns into a clean usage error before any paid call is made."""
+    return sorted({date.fromisoformat(part.strip()) for part in value.split(",") if part.strip()})
 
 
 def parse_hhmm(s: str):
@@ -169,11 +176,12 @@ def offer_is_valid(offer, arrival_cutoff_hhmm, dep_window_start_hhmm, dep_window
     return True
 
 
-def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target_month, progress_cb=None):
+def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target_month,
+                 picked_dates=None, progress_cb=None):
     rows = []
-    dates = list(valid_outbound_dates(date.today() + timedelta(days=1), ROLLING_WINDOW_DAYS, target_month))
+    dates = picked_dates or list(valid_outbound_dates(date.today() + timedelta(days=1), ROLLING_WINDOW_DAYS, target_month))
     combos = [(d, o, dest) for d in dates for o in ORIGIN_AIRPORTS for dest in DESTINATION_AIRPORTS]
-    log(f"Flights: {len(dates)} valid outbound dates x {len(ORIGIN_AIRPORTS)} origins x "
+    log(f"Flights: {len(dates)} outbound dates x {len(ORIGIN_AIRPORTS)} origins x "
         f"{len(DESTINATION_AIRPORTS)} destinations = {len(combos)} searches")
 
     if dry_run:
@@ -236,8 +244,16 @@ def load_tracked_hotels(supabase_url, supabase_key):
     return [h for h in resp.json() if h.get("booking_url")]
 
 
-def scan_hotels(dry_run, supabase_url, supabase_key, progress_cb=None):
+def scan_hotels(dry_run, supabase_url, supabase_key, picked_dates=None, progress_cb=None):
     rows = []
+    # One scrape returns the whole date range at the same cost, so a picked-days run still
+    # refreshes the default Mon/Tue/Wed rows too. It stores only those plus the picked days, not
+    # every day scraped, because the client reads this table without paging and PostgREST caps
+    # an unpaged read at 1000 rows by default — see loadHotelPrices in index.html.
+    picked = set(picked_dates or [])
+    price_n_days = ROLLING_WINDOW_DAYS
+    if picked:
+        price_n_days = max(ROLLING_WINDOW_DAYS, (max(picked) - date.today()).days + 1)
     hotels = load_tracked_hotels(supabase_url, supabase_key)
     if not hotels:
         log("  no hotels found in tracked_hotels (or Supabase creds not given) — nothing to "
@@ -247,7 +263,7 @@ def scan_hotels(dry_run, supabase_url, supabase_key, progress_cb=None):
     if dry_run:
         for hotel in hotels:
             log(f"  [dry-run] would scrape {hotel['name']} ({hotel['booking_url']}) for "
-                f"{ROLLING_WINDOW_DAYS} days from today")
+                f"{price_n_days} days from today")
         return rows
 
     import bookingcom  # vendored — see scripts/vendor/bookingcom.py for provenance/license
@@ -257,7 +273,7 @@ def scan_hotels(dry_run, supabase_url, supabase_key, progress_cb=None):
             log(f"  scraping {hotel['name']}...")
             try:
                 result = await bookingcom.scrape_hotel(
-                    hotel["booking_url"], checkin=date.today().isoformat(), price_n_days=ROLLING_WINDOW_DAYS
+                    hotel["booking_url"], checkin=date.today().isoformat(), price_n_days=price_n_days
                 )
             except Exception as e:
                 log(f"    failed: {e}")
@@ -269,7 +285,8 @@ def scan_hotels(dry_run, supabase_url, supabase_key, progress_cb=None):
                     stay_date = date.fromisoformat(day["checkin"])
                 except (KeyError, ValueError):
                     continue
-                if stay_date.weekday() not in VALID_OUTBOUND_WEEKDAYS or not day.get("available"):
+                in_scope = stay_date.weekday() in VALID_OUTBOUND_WEEKDAYS or stay_date in picked
+                if not in_scope or not day.get("available"):
                     continue
                 # avgPriceFormatted is a display string like "£342" (with country set to GB in
                 # the vendored scraper's BASE_CONFIG, it comes back with a £ symbol) — a first
@@ -338,13 +355,16 @@ def delete_stale_flight_rows(dates, supabase_url, supabase_key):
     would otherwise sit there forever with stale, possibly-wrong data. Found exactly this after
     the timezone storage bug fix: 3 rows from the earlier corrupted run stayed behind because
     the corrected run found no valid offer for those exact date+route combos, so nothing
-    upserted over them. Delete every row in the scanned date range before upserting the fresh
-    set, so the table always reflects exactly what this run actually found."""
+    upserted over them. Delete the rows for exactly the dates scanned before upserting the fresh
+    set, so the table always reflects exactly what this run actually found. This has to be the
+    exact dates, not a min-to-max range: picked days can be scattered, and a range would wipe
+    every unpicked day in between (and the weekly Mon/Tue/Wed scan would wipe a Thursday someone
+    picked earlier) without having looked at them."""
     if not dates:
         return
+    date_list = ",".join(d.isoformat() for d in dates)
     resp = requests.delete(
-        f"{supabase_url.rstrip('/')}/rest/v1/flight_prices"
-        f"?outbound_date=gte.{min(dates).isoformat()}&outbound_date=lte.{max(dates).isoformat()}",
+        f"{supabase_url.rstrip('/')}/rest/v1/flight_prices?outbound_date=in.({date_list})",
         headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"},
         timeout=30,
     )
@@ -392,6 +412,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--target-month", default=None, help="YYYY-MM, defaults to a rolling window")
+    parser.add_argument("--dates", type=parse_dates_arg, default=None,
+                         help="Comma-separated YYYY-MM-DD outbound days to scan, instead of the "
+                              "default Mon/Tue/Wed window. Takes priority over --target-month")
     parser.add_argument("--arrival-cutoff", default=DEFAULT_ARRIVAL_CUTOFF)
     parser.add_argument("--departure-window-start", default=DEFAULT_DEPARTURE_WINDOW[0])
     parser.add_argument("--departure-window-end", default=DEFAULT_DEPARTURE_WINDOW[1])
@@ -484,7 +507,8 @@ def main():
             log("=== Flights ===")
             flight_rows, scanned_dates = scan_flights(duffel_key, args.dry_run, args.arrival_cutoff,
                                                         args.departure_window_start, args.departure_window_end,
-                                                        args.target_month, progress_cb=flight_progress)
+                                                        args.target_month, picked_dates=args.dates,
+                                                        progress_cb=flight_progress)
             log(f"Found {len(flight_rows)} valid flight combination(s)")
             if not args.dry_run:
                 delete_stale_flight_rows(scanned_dates, supabase_url, supabase_key)
@@ -495,7 +519,8 @@ def main():
             log("\n=== Hotels (skipped) ===")
         else:
             log("\n=== Hotels ===")
-            hotel_rows = scan_hotels(args.dry_run, supabase_url, supabase_key, progress_cb=hotel_progress)
+            hotel_rows = scan_hotels(args.dry_run, supabase_url, supabase_key, picked_dates=args.dates,
+                                     progress_cb=hotel_progress)
             log(f"Found {len(hotel_rows)} hotel/date price(s)")
             if not args.dry_run:
                 upsert_supabase("hotel_prices", hotel_rows, "hotel_name,stay_date", supabase_url, supabase_key)

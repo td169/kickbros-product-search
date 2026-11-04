@@ -6,6 +6,30 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-11-04 — Pick your own days, and "Update now" fixed
+
+### Fix: "Update now" looked like it did nothing
+
+Tapping it did start a real scan, but the screen read the *previous* scan's "finished" status
+before the new one had got going. The progress bar flashed "Updated" and disappeared within a
+second, the button came straight back (making it easy to pay for a second scan by accident), and
+the new prices never loaded on screen. Now the bar says "Starting scan..." until the new scan
+really begins, then shows its real progress, and loads the new prices when it finishes.
+
+### Pick the days you can go
+
+The Month filter on Plan next trip is now a calendar: tap the days you can fly out (Monday to
+Thursday, up to 60 days ahead, flying back the next day) and you only see trips for those days.
+They're remembered on that device. "Update now" scans flights for just the days you picked, so it
+uses far fewer flight searches than a full scan (hotels are still all refreshed), and the
+confirmation tells you what it'll scan. With nothing picked it scans every Mon–Thu in the next 45
+days.
+
+The automatic Thursday scan still covers Mon/Tue/Wed only, so a Thursday shows no prices until you
+tap "Update now".
+
+---
+
 ## 2026-10-04 — Weekly Thursday scans, 45-day window, "Update now" with live progress
 
 ### Trip scan now runs weekly, on a 45-day window
