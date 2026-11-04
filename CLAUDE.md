@@ -629,13 +629,23 @@ and a picked-days scan of four Mondays saved nothing at all). So on explicit pro
   windows (`offer_time_miss`, minutes outside), cheapest on a tie. An offer that fits always wins,
   so results for days with a fitting flight are unchanged. It's closest rather than cheapest
   because the cheapest offer on those same Mondays returned at 10:15 the next morning.
+- "Closest" has a hard limit, also on explicit product instruction: an 8pm return is fine, an
+  afternoon one must never show. So a return earlier than `EARLIEST_SHOWN_RETURN` (20:00), or a
+  landing after 11:00, isn't kept however close it is. Without this limit the first real run saved
+  flights about 7 and 29 hours outside the times. A day whose only flights are like that shows no
+  card rather than a bad one. Slack on the landing was never asked for, so it gets none.
+- `isFlightCloseEnough` applies the same limit in `loadFlightPrices`, because rows saved earlier stay
+  in the table until their day is scanned again. It checks the landing's date too: a connection
+  landing the next morning has a clock time that looks fine on its own.
 - `flight_prices` has no "fits" column and needs none: `flightTimeNote` works it out client-side
   from the stored times, marks the card "Closest available: ...", and `compareTrips` sorts fitting
-  trips first. `LATEST_LANDING`/`EARLIEST_RETURN` there must match the workflow's default windows.
-- The app must not claim no flights exist. A picked day with no stored row only says "No prices
-  yet". If a scan really gets nothing for a day, `scan_summary_message` writes that to
-  `scan_progress.message`, worded around what the search saw (airlines Duffel doesn't carry can't
-  appear, and a single-route probe can legitimately return 0 offers), and the app shows it on finish.
+  trips first. `LATEST_LANDING`/`EARLIEST_RETURN`/`EARLIEST_SHOWN_RETURN` there must match the
+  workflow's default windows and the script's constant.
+- The app must not claim no flights exist. A picked day with no row it can show only says "No
+  prices saved within your times". If a scan gets nothing usable for a day, `scan_summary_message`
+  writes that to `scan_progress.message`, worded around what the search saw (other times and
+  airlines Duffel doesn't carry can't appear, and a single-route probe can legitimately return 0
+  offers), and the app shows it on finish.
 
 Which days get scanned depends on how the scan was started:
 - **The weekly scheduled run**: outbound **Mon/Tue/Wed only** (`VALID_OUTBOUND_WEEKDAYS` — not Thu,

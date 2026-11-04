@@ -2687,7 +2687,7 @@
     if (!db) return [];
     const { data, error } = await db.from('flight_prices').select('*').gte('outbound_date', addDaysStr(1));
     if (error) { console.error('loadFlightPrices', error); return []; }
-    return data || [];
+    return (data || []).filter(isFlightCloseEnough);
   }
   async function loadHotelPrices() {
     if (!db) return [];
@@ -2857,18 +2857,25 @@
     return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
   }
 
-  // The scan keeps a route's closest flight even when nothing fits these times (pick_best_offer in
-  // scan_trips.py), so a card has to say so. Empty string means it fits. These are the workflow's
-  // default windows; "HH:MM" strings compare correctly as plain text.
+  // The scan keeps a route's closest flight when nothing fits these times, as long as it flies back
+  // from EARLIEST_SHOWN_RETURN (pick_best_offer in scan_trips.py). These are the workflow's default
+  // windows; "HH:MM" strings compare correctly as plain text.
   const LATEST_LANDING = '11:00';
   const EARLIEST_RETURN = '21:00';
+  const EARLIEST_SHOWN_RETURN = '20:00';
+  // An afternoon flight must never show, and rows saved before the scan had that limit stay in the
+  // table until their day is scanned again, so this hides them too. The date check is for a
+  // connection landing the next day, whose clock time alone would look fine.
+  function isFlightCloseEnough(f) {
+    const landsOn = new Date(f.outbound_arrival).toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+    return landsOn === f.outbound_date &&
+      fmtLocalTime(f.outbound_arrival, 'Europe/Paris') <= LATEST_LANDING &&
+      fmtLocalTime(f.return_departure, 'Europe/Paris') >= EARLIEST_SHOWN_RETURN;
+  }
+  // What a card has to say about its times. Empty string means it fits.
   function flightTimeNote(f) {
-    const lands = fmtLocalTime(f.outbound_arrival, 'Europe/Paris');
     const leaves = fmtLocalTime(f.return_departure, 'Europe/Paris');
-    const notes = [];
-    if (lands > LATEST_LANDING) notes.push('lands ' + lands + ', after ' + LATEST_LANDING);
-    if (leaves < EARLIEST_RETURN) notes.push('flies back ' + leaves + ', before ' + EARLIEST_RETURN);
-    return notes.join(' · ');
+    return leaves < EARLIEST_RETURN ? 'flies back ' + leaves + ', before ' + EARLIEST_RETURN : '';
   }
 
   // Relative-time label for each option card's "Last updated" — re-run whenever the view
@@ -2944,7 +2951,7 @@
     const missing = el('planTripMissingDays');
     const missingDays = sortedPickedDays().filter(d => !flightPricesCache.some(f => f.outbound_date === d));
     missing.hidden = !missingDays.length;
-    missing.textContent = 'No prices yet for ' + missingDays.map(fmtShortDate).join(', ') +
+    missing.textContent = 'No prices saved within your times for ' + missingDays.map(fmtShortDate).join(', ') +
       ' — tap "Update now" to search for them.';
 
     const origins = ['SEN', 'LTN', 'STN'].filter(code => el('origin' + code).checked);

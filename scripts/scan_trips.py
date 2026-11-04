@@ -42,6 +42,10 @@ PARIS_TZ = ZoneInfo("Europe/Paris")
 UK_TZ = ZoneInfo("Europe/London")
 DEFAULT_ARRIVAL_CUTOFF = "11:00"
 DEFAULT_DEPARTURE_WINDOW = ("21:00", "23:59")
+# How early a return can be and still get kept when nothing fits the window. An 8pm flight is worth
+# showing, an afternoon one never is (explicit product rule). Landing gets no such slack. The
+# client hides older rows by the same limit: EARLIEST_SHOWN_RETURN in index.html must match.
+EARLIEST_SHOWN_RETURN = "20:00"
 ROLLING_WINDOW_DAYS = 45  # the whole scan window — no separate monthly/third-month pass
 # A first real run at 0.2s between calls hit Duffel's rate limit almost immediately (nearly all
 # 225 searches came back 429). 1.0s is untested but a much safer starting point — tune this
@@ -184,16 +188,18 @@ def offer_is_valid(offer, arrival_cutoff_hhmm, dep_window_start_hhmm, dep_window
 
 def pick_best_offer(offers, arrival_cutoff, dep_start, dep_end):
     """The one offer to keep for a route and date: the closest to the pattern, cheapest on a tie,
-    so an offer that fits always wins and the cheapest of those is kept. Offers outside the
-    pattern are kept on purpose. Dropping them made a day look like it had no flights when the
+    so an offer that fits always wins and the cheapest of those is kept. A return a little before
+    the window is kept on purpose. Dropping those made a day look like it had no flights when the
     only problem was e.g. a 20:45 return against a 21:00 window (confirmed live: every Luton-CDG
-    Monday). Closest beats cheapest there, since the cheap option on those same days came back at
-    10:15 the next morning, which isn't the trip at all. The client marks these from their stored
-    times (flightTimeNote in index.html)."""
+    Monday). Anything earlier than EARLIEST_SHOWN_RETURN, or landing late, is never kept: with no
+    limit, the first real run saved flights about 7 and 29 hours outside the times, just because
+    they were the closest that route had. The client marks the kept ones from their stored times
+    (flightTimeNote in index.html)."""
+    earliest_return = min(dep_start, EARLIEST_SHOWN_RETURN)
     scored = []
     for offer in offers:
         miss = offer_time_miss(offer, arrival_cutoff, dep_start, dep_end)
-        if miss is not None:
+        if miss is not None and offer_is_valid(offer, arrival_cutoff, earliest_return, dep_end):
             scored.append((miss, float(offer["total_amount"]), offer))
     if not scored:
         return None, None
@@ -201,17 +207,18 @@ def pick_best_offer(offers, arrival_cutoff, dep_start, dep_end):
     return offer, miss
 
 
-def scan_summary_message(dates, flight_rows, failed_dates):
+def scan_summary_message(dates, flight_rows, failed_dates, arrival_cutoff, dep_start):
     """What the app shows when a scan finishes. Worded around what this search saw, because an
-    empty result only ever means the airlines Duffel carries returned nothing — never that no
-    flight exists that day."""
+    empty result only ever means nothing within these times came back from the airlines Duffel
+    carries — never that no flight exists that day."""
     fmt = lambda days: ", ".join(d.strftime("%a %-d %b") for d in days)
     found = {row["outbound_date"] for row in flight_rows}
     empty = [d for d in dates if d.isoformat() not in found and d not in failed_dates]
     parts = []
     if empty:
-        parts.append(f"The flight search returned no fares for {fmt(empty)} on the routes it checks. "
-                     "Airlines it doesn't carry can't appear, so flights may still exist.")
+        parts.append(f"The flight search found nothing landing by {arrival_cutoff} and flying back from "
+                     f"{min(dep_start, EARLIEST_SHOWN_RETURN)} for {fmt(empty)} on the routes it checks. "
+                     "Flights at other times or on airlines it doesn't carry may still exist.")
     if failed_dates:
         parts.append(f"Some searches for {fmt(sorted(failed_dates))} failed after retries, so those "
                      "days may be missing routes. Tap Update now to try them again.")
@@ -243,6 +250,8 @@ def scan_flights(duffel_key, dry_run, arrival_cutoff, dep_start, dep_end, target
             failed_dates.add(out_date)
         best, miss = pick_best_offer(offers or [], arrival_cutoff, dep_start, dep_end)
         if best is None:
+            if offers:
+                log(f"    {len(offers)} offer(s), none close enough to the times")
             if progress_cb:
                 progress_cb(i, len(combos))
             time.sleep(DUFFEL_REQUEST_DELAY)
@@ -562,7 +571,8 @@ def main():
                 # wiping that route because Duffel rate-limited us just now.
                 delete_stale_flight_rows([d for d in scanned_dates if d not in failed_dates],
                                          supabase_url, supabase_key)
-                finish_message = scan_summary_message(scanned_dates, flight_rows, failed_dates)
+                finish_message = scan_summary_message(scanned_dates, flight_rows, failed_dates,
+                                                      args.arrival_cutoff, args.departure_window_start)
                 upsert_supabase("flight_prices", flight_rows, "outbound_date,origin_airport,destination_airport",
                                  supabase_url, supabase_key)
 

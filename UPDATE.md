@@ -8,6 +8,14 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ## 2026-11-04 — Pick your own days, and "Update now" fixed
 
+### Fix: "Closest available" could show an afternoon flight
+
+"Closest" had no limit, so a route's only option could be hours off and still appear. Now the
+closest flight only shows if it flies back from 20:00 and still lands by 11:00. Anything further off
+never appears, including ones already saved by an earlier scan. A day with nothing in those times
+shows no card, and the app says it has no prices saved within your times, not that there are no
+flights.
+
 ### Fix: picked days wrongly said there were no flights
 
 The scan threw away any flight outside the 11:00 landing and 21:00–23:59 return, then the app said
