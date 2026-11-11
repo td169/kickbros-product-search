@@ -6,6 +6,35 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-11-11 (late night) — Remove from a trip, delete only in the Catalog
+
+Tapping a product on a trip page used to offer "Delete product", which wiped it from the whole
+catalog. There it now says **Remove from trip**: it comes off that trip and stays in the catalog
+(add it back any time with "From catalog"). Deleting a product outright is only offered when you
+open it from the Catalog. A client's purchase history no longer offers delete either.
+
+---
+
+## 2026-11-11 (late night) — FR price found more often
+
+Some products found the French page but left the FR price empty. For brands that translate the
+words in their links (Chanel, Gucci, Balenciaga, Moncler, Burberry), the app checked the French
+search result against the English words of the link, so it never recognised the right French page.
+It still used the price when Google's preview happened to show one, but when it didn't, it skipped
+its backup searches (searching by product code, then Google Shopping), and you had to look it up
+yourself. It now checks by the product code, which is the same in both languages, so those backup
+searches run. Also, after a scrape the app no longer runs its price and photo searches at the same
+time, which can make Google return the wrong results.
+
+The biggest one, for Louis Vuitton, Dior, Prada, Loro Piana and Chanel: once a product had *any*
+price saved, checking it again never searched Google at all. So if the first check found the UK
+price but not the FR one, the FR price was never looked for again, however many times you pasted
+the link, even though Google shows it (e.g. the Écharpe Cold Reykjavik S00 at 2 020,00 €). Now a
+re-check searches for whichever price is still missing, and only skips the search once both are
+saved. It doesn't redo the photo search if the item already has a photo.
+
+---
+
 ## 2026-11-11 (night) — Tidier trip page, a hide button, "Active Paris Trip"
 
 - **Expenses instead of a details list.** The dates are already on the big card, so the Start/End/

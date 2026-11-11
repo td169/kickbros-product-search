@@ -115,9 +115,19 @@ matching UK/FR URL from whichever one the user pasted, plus a `scrapeBlocked` fl
   - **A same-domain result is never trusted just because it "looks like a product page."** The
     old heuristic (`pathname.length > 15`) matched a Dior *customer-service contact page* just as
     happily as the real product — confirmed live. `isOurProductPage(link)` now requires the
-    candidate's own URL to actually contain `getSku(url)` (the product code) whenever one exists,
-    which is far more specific; the path-length heuristic only survives as a fallback for the rare
-    case where there's no code to check against at all.
+    candidate's own URL to actually contain `productCode(url)` (case-insensitive) whenever one
+    exists, which is far more specific; the path-length heuristic only survives as a fallback for
+    the rare case where there's no code to check against at all.
+  - **`productCode`, not `getSku`, because most brands translate the words in their links.** A FR
+    link built from a UK one keeps the English slug (Chanel `ballet-flats-lambskin`, Gucci
+    `gg-marmont-small-shoulder-bag-p-443497DTDIT1000`), while the page Google indexed has the
+    French one, so checking for the whole last segment never matched on the FR side. The page was
+    then only a "shallow" match: its snippet price was still used if it had one, but with no price
+    in the snippet the code retry and Shopping were skipped, leaving FR blank with the right page
+    sitting in the results. `productCode` uses the brand's own `sku()` (Chanel, Burberry) or the
+    longest dash-separated piece of the last segment containing a digit (`.html` dropped); Dior
+    and LV links already end in the bare code, so they're unaffected. The code+brand retry query
+    now uses this bare code too.
   - **The exact URL as a search query doesn't always find what Google has actually indexed** —
     confirmed live on Dior, where the URL-as-query search surfaced nothing but homepage/category
     pages (no real product page at all, even same-domain) for one specific item, while a
@@ -155,6 +165,13 @@ matching UK/FR URL from whichever one the user pasted, plus a `scrapeBlocked` fl
     finds **nothing** for some items (e.g. a Chanel shoe with no Chanel-sourced Shopping listing
     at all, only resellers) — that's the intended outcome, not a bug: no verified listing means no
     price, never a reseller's possibly-different price passed off as one.
+- **A re-check searches for whichever price is still missing.** `showManualMode` only skips
+  `trySerperFill` once BOTH prices are on record (catalog row or known-SKU cache), and
+  `trySerperFill` skips a side whose field already has a price, and the photo search when the card
+  already has a photo. It used to skip everything as soon as *either* price existed, so an item
+  whose first check found only the UK price never had its FR price searched for again (reported
+  on an LV scarf, M74353, whose FR price is right there in Google's result; the app's price
+  parsing reads that exact snippet as 2020 fine, so the lookup was never the part failing).
 - **Per-field "still looking" indicator**: while a background price lookup (Serper organic or
   Shopping) is in flight for a specific side, a small "···" (`.price-dots`, `#frPriceLoading` /
   `#ukPriceLoading`) shows next to that field, toggled by `setPriceLoading(fieldId, bool)`. It's
@@ -258,7 +275,8 @@ Serper request at a time — even two harmless `/search` calls with nothing else
 empirically found to make Google's own ranking unstable for the "exact URL as query" pattern
 this app relies on, sometimes returning a completely different product. `trySerperFill` and
 `tryImageFallback` await each call before starting the next; do not refactor these back to
-`Promise.all`.
+`Promise.all`. The same goes for `runCheck`'s follow-ups after a scrape: `serperFollowUps` runs
+the price fallback and then the image fallback in turn (they used to be fired side by side).
 
 Image URLs from Serper's `/search`/`organic` results point at the source site's own CDN and are
 blocked by the same bot protection as the page itself. `serperImageSearch` uses the `/images`
@@ -442,6 +460,11 @@ below. The main Prices tab never shows client-linking UI, on purpose.
 The old `deleteConfirmOverlay` confirm dialog is now generic (`confirmDeleteProduct(id)` +
 module-level `pendingDeleteId`) rather than reading `current.catalogId` — its only caller is the
 product-detail modal's delete button, since the card itself never shows a delete option anymore.
+That delete button only shows when the modal was opened from the Catalog:
+`openProductDetail(entry, from)` takes `'catalog' | 'trip' | 'client'`. Opened from Trip Detail,
+the same spot is "Remove from trip" (`trip_label: null`, no confirm since "From catalog" can add it
+back, and nothing is touched on screen if the write fails: `updateCatalogEntry` now returns
+whether it succeeded). From a client's purchases or requests it shows neither.
 
 ### Clients (Supabase `clients` / `client_requests` tables, plus `products.client_id`)
 
