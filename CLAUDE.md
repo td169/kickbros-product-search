@@ -569,12 +569,19 @@ trip from Plan next trip, and that screen used to stay up underneath. "Create tr
 upsert and only navigates on success (an error `alert()`s and leaves the modal open), and Trip
 Detail re-reads the row rather than trusting the form, so it shows what was actually saved.
 
-Its layout (`.td-*` classes): a dark hero card in the Home widget's style (`renderTripDetailHero`:
-countdown/ACTIVE/PAST/NO DATES YET from the same London-date helpers, dates and nights, the raw
-label small in `#tripDetailTitle`), a net-profit card plus Items/Revenue/Profit tiles in
-`#tripDetailStats`, an iOS-style grouped list for the start/end/flight/hotel inputs (same ids and
-`change` handlers as before), then the products. Every money figure keeps `.trip-figure`, so the
-privacy blur (`body.hide-sensitive`) still covers them.
+Its layout (`.td-*` classes): "‹ Trips" with the privacy eye (`#tripEyeBtn`) top right, a dark
+hero card in the Home widget's style (`renderTripDetailHero`: countdown, then "Active Paris Trip"
+with a `tripDayLabel` chip ("DAY 2 OF 3", or "TODAY" for a one-day trip), PAST TRIP or NO DATES
+YET, from the same London-date helpers; dates and nights; the raw label small in
+`#tripDetailTitle`), a net-profit card plus Items/Revenue/Profit tiles in `#tripDetailStats`, an
+Expenses row showing only flight + hotel combined until tapped (`setExpensesOpen`), an "Edit trip
+details" button, then the products. The dates are already in the hero, so the start/end/flight/
+hotel inputs live only in the `#tripEditOverlay` sheet (same ids and `change` handlers as before;
+closing it blurs the focused field so its `change` still fires). Every figure, Items included,
+keeps `.trip-figure`, so the privacy blur (`body.hide-sensitive`) covers them, and while hidden
+`.trip-net-pos`/`.trip-net-neg` lose their colour everywhere, since green/red would give away
+whether a hidden profit is up or down. "New product" in the top bar only shows on Prices, the
+only screen whose search bar it reopens.
 From here you can add products two ways:
 - **"+ Paste a link"** reveals an inline URL input reusing `startCheckFromUrl()` — the same
   brand-detection/scrape logic as the main dock's checkBtn (factored out into that shared
@@ -610,7 +617,8 @@ time-sensitive. Dark "Paris at night" styling (midnight blue, a faint lit Eiffel
 inline SVG data URI in `--tower`, so no image request), deep green while a trip is on. Built from
 the `trips` table's `start_date`/`end_date` (no schema of its own). Rules, all in
 `pickWidgetTrips`/`buildTripWidget`:
-- Active trips (today within start–end, inclusive) come first in green with "ACTIVE TRIP", then
+- Active trips (today within start–end, inclusive) come first in green as "Active Paris Trip"
+  with a "DAY 2 OF 3"/"TODAY" label (`tripDayLabel`, shared with the trip page), then
   upcoming ones ("Paris in 12 days", "Paris tomorrow"), capped at 2 cards. Past trips and trips
   without a `start_date` never show; a missing or earlier-than-start `end_date` means a one-day trip.
 - "Today" is the **Europe/London** calendar date (`londonToday`), compared as `YYYY-MM-DD` strings,

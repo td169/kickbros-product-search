@@ -6,6 +6,21 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-11-11 (night) — Tidier trip page, a hide button, "Active Paris Trip"
+
+- **Expenses instead of a details list.** The dates are already on the big card, so the Start/End/
+  Flight/Hotel list is gone from the page. Flight and hotel now show as one **Expenses** total; tap
+  it to see each one. To change anything, tap **Edit trip details**, which opens a sheet with all
+  four fields.
+- **Hide button on the trip page.** "New product" no longer sits in the top right of the trip page
+  (it only shows on Prices now, where it reopens the search bar). In its place is the eye button,
+  which hides net profit, items, revenue, profit and expenses. While they're hidden, profit is no
+  longer green or red anywhere, so the colour can't give it away.
+- **"Active Paris Trip".** Once the countdown runs out, the trip page and the Home widget say
+  "Active Paris Trip", with a small "DAY 2 OF 3" (or "TODAY" for a one-day trip) above it.
+
+---
+
 ## 2026-11-11 (evening) — A much better trip page, Settings moves to Home
 
 ### Trip page redesign

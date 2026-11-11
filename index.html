@@ -104,7 +104,9 @@
   }
   .new-check-btn:hover{background:var(--surface-2);}
   body.result-active .new-check-btn{display:block;}
-  body.dock-open .new-check-btn{display:none;}
+  /* It only reopens the Prices search bar, so it has no business on any other screen. */
+  body.dock-open .new-check-btn,
+  body:not([data-tab="prices"]) .new-check-btn{display:none;}
 
   /* brand-filter popover (top-left icon, Catalog-only) */
   .filter-panel{
@@ -216,7 +218,7 @@
     /* DM Serif Display only ships one (already heavy) weight: 700 plus no synthesis keeps it as
        drawn, while the Georgia fallback gets its real bold. */
     font-family:'DM Serif Display',Georgia,serif;font-weight:700;font-synthesis:none;
-    font-size:clamp(28px, 9vw, 40px);line-height:1.05;letter-spacing:-.01em;
+    font-size:clamp(28px, 9vw, 40px);line-height:1.05;letter-spacing:-.01em;text-wrap:balance;
     display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
   }
   .trip-widget-dates{font-size:13px;font-weight:500;opacity:.7;}
@@ -388,6 +390,9 @@
     filter:blur(6px);
     user-select:none;
   }
+  /* Green or red would still give away whether a hidden profit is up or down. */
+  body.hide-sensitive .trip-net-pos,
+  body.hide-sensitive .trip-net-neg{color:inherit;}
   .card.show{display:block;}
   /* The reopened dock is a fixed overlay sitting on top of the card, not resizing it —
      without this, its bottom few rows render underneath the dock. Hiding the footnote
@@ -777,6 +782,10 @@
   }
   .td-back:hover{background:var(--surface);}
   .td-back svg{width:20px;height:20px;}
+  .td-topline{display:flex;align-items:center;justify-content:space-between;}
+  .td-topline .td-back{margin-bottom:12px;}
+  .td-topline .eye-btn{width:38px;height:38px;margin:4px -6px 12px 0;background:var(--surface);}
+  .modal .td-group{margin-top:0;}
   .td-hero{
     position:relative;overflow:hidden;min-height:200px;
     display:flex;flex-direction:column;justify-content:flex-end;gap:6px;
@@ -811,7 +820,7 @@
   .td-hero-status .trip-widget-dot{width:6px;height:6px;}
   .td-hero-main{
     font-family:'DM Serif Display',Georgia,serif;font-weight:700;font-synthesis:none;
-    font-size:clamp(34px, 11vw, 46px);line-height:1;letter-spacing:-.01em;max-width:80%;
+    font-size:clamp(34px, 11vw, 46px);line-height:1;letter-spacing:-.01em;max-width:80%;text-wrap:balance;
   }
   .td-hero-dates{font-size:14px;font-weight:500;opacity:.75;}
   .td-hero-label{
@@ -836,7 +845,7 @@
     font-size:11.5px;letter-spacing:0;color:var(--ink);
   }
   .td-count:empty{display:none;}
-  .td-group{background:var(--surface);border-radius:18px;overflow:hidden;}
+  .td-group{margin-top:12px;background:var(--surface);border-radius:18px;overflow:hidden;}
   .td-row{display:flex;align-items:center;gap:12px;padding:10px 14px;min-height:54px;cursor:text;}
   .td-row + .td-row{border-top:1px solid var(--line);}
   .td-row-icon{
@@ -857,6 +866,28 @@
   .td-money input::-webkit-outer-spin-button,
   .td-money input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
   .td-row:focus-within{background:var(--surface-2);}
+  /* Expenses: one total, with flight and hotel only shown once it's tapped. */
+  button.td-row{
+    width:100%;border:none;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button.td-row:active{background:var(--surface-2);}
+  .td-row-value{font-size:15px;font-weight:700;}
+  .td-row-value.none{font-weight:500;color:var(--muted);}
+  .td-chev{width:18px;height:18px;flex:none;color:var(--muted);transition:transform .2s ease;}
+  .td-row[aria-expanded="true"] .td-chev{transform:rotate(90deg);}
+  .td-breakdown{border-top:1px solid var(--line);}
+  .td-breakdown[hidden]{display:none;}
+  .td-subrow{min-height:44px;padding-left:58px;cursor:default;}
+  .td-subrow .td-row-label{font-weight:500;color:var(--muted);}
+  .td-subrow .td-row-value{font-weight:600;margin-right:28px;}
+  .td-edit-btn{
+    width:100%;height:46px;margin-top:10px;display:flex;align-items:center;justify-content:center;gap:8px;
+    border:none;border-radius:16px;background:none;box-shadow:inset 0 0 0 1.5px var(--line);color:var(--ink);
+    font:inherit;font-size:14px;font-weight:700;cursor:pointer;
+  }
+  .td-edit-btn svg{width:16px;height:16px;}
+  .td-edit-btn:active{background:var(--surface);}
 
   .td-add{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
   .td-add-btn{
@@ -1441,6 +1472,40 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="tripEditOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Edit trip details</h3>
+        <button type="button" class="modal-close" id="tripEditClose" aria-label="Close">×</button>
+      </div>
+      <div class="td-group">
+        <label class="td-row" for="tripDetailStart">
+          <span class="td-row-icon" style="--td-accent:#7fd69b"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+          <span class="td-row-label">Start</span>
+          <input type="date" id="tripDetailStart">
+        </label>
+        <label class="td-row" for="tripDetailEnd">
+          <span class="td-row-icon" style="--td-accent:#7fd69b"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="9 15 11 17 15 13"/></svg></span>
+          <span class="td-row-label">End</span>
+          <input type="date" id="tripDetailEnd">
+        </label>
+        <label class="td-row" for="tripDetailFlight">
+          <span class="td-row-icon" style="--td-accent:#8fb3ff"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></span>
+          <span class="td-row-label">Flight</span>
+          <span class="td-money"><span>£</span><input type="number" inputmode="decimal" id="tripDetailFlight" step="0.01" min="0" placeholder="0.00"></span>
+        </label>
+        <label class="td-row" for="tripDetailHotel">
+          <span class="td-row-icon" style="--td-accent:#e2c275"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20V8"/><path d="M2 12h20v8"/><path d="M2 17h20"/><path d="M6 12V9a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3"/></svg></span>
+          <span class="td-row-label">Hotel</span>
+          <span class="td-money"><span>£</span><input type="number" inputmode="decimal" id="tripDetailHotel" step="0.01" min="0" placeholder="0.00"></span>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-primary" id="tripEditDone">Done</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="statsOverlay">
     <div class="modal">
       <div class="modal-header">
@@ -1581,10 +1646,13 @@
   </main>
 
   <main class="view" id="tripDetailView">
-    <button type="button" class="td-back" id="tripDetailBack">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-      Trips
-    </button>
+    <div class="td-topline">
+      <button type="button" class="td-back" id="tripDetailBack">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Trips
+      </button>
+      <button type="button" class="eye-btn" id="tripEyeBtn" aria-label="Hide profit, revenue and items" aria-pressed="false"></button>
+    </div>
 
     <section class="td-hero" id="tripDetailHero">
       <div class="td-hero-status" id="tripDetailStatus"></div>
@@ -1595,29 +1663,22 @@
 
     <div class="td-stats" id="tripDetailStats"></div>
 
-    <h2 class="td-section-title">Trip details</h2>
     <div class="td-group">
-      <label class="td-row" for="tripDetailStart">
-        <span class="td-row-icon" style="--td-accent:#7fd69b"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
-        <span class="td-row-label">Start</span>
-        <input type="date" id="tripDetailStart">
-      </label>
-      <label class="td-row" for="tripDetailEnd">
-        <span class="td-row-icon" style="--td-accent:#7fd69b"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="9 15 11 17 15 13"/></svg></span>
-        <span class="td-row-label">End</span>
-        <input type="date" id="tripDetailEnd">
-      </label>
-      <label class="td-row" for="tripDetailFlight">
-        <span class="td-row-icon" style="--td-accent:#8fb3ff"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></span>
-        <span class="td-row-label">Flight</span>
-        <span class="td-money"><span>£</span><input type="number" inputmode="decimal" id="tripDetailFlight" step="0.01" min="0" placeholder="0.00"></span>
-      </label>
-      <label class="td-row" for="tripDetailHotel">
-        <span class="td-row-icon" style="--td-accent:#e2c275"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20V8"/><path d="M2 12h20v8"/><path d="M2 17h20"/><path d="M6 12V9a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3"/></svg></span>
-        <span class="td-row-label">Hotel</span>
-        <span class="td-money"><span>£</span><input type="number" inputmode="decimal" id="tripDetailHotel" step="0.01" min="0" placeholder="0.00"></span>
-      </label>
+      <button type="button" class="td-row" id="tripExpensesBtn" aria-expanded="false" aria-controls="tripExpensesBreakdown">
+        <span class="td-row-icon" style="--td-accent:#f2a37b"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 1 .7V2l-1 .7-3-2-3 2-3-2-3 2-3-2z"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/></svg></span>
+        <span class="td-row-label">Expenses</span>
+        <span class="td-row-value trip-figure" id="tripExpensesTotal"></span>
+        <svg class="td-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <div class="td-breakdown" id="tripExpensesBreakdown" hidden>
+        <div class="td-row td-subrow"><span class="td-row-label">Flight</span><span class="td-row-value trip-figure" id="tripExpensesFlight"></span></div>
+        <div class="td-row td-subrow"><span class="td-row-label">Hotel</span><span class="td-row-value trip-figure" id="tripExpensesHotel"></span></div>
+      </div>
     </div>
+    <button type="button" class="td-edit-btn" id="tripEditBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+      Edit trip details
+    </button>
 
     <h2 class="td-section-title">Products <span class="td-count" id="tripDetailCount"></span></h2>
     <div class="td-add">
@@ -2543,7 +2604,7 @@
   let hideSensitive = localStorage.getItem(HIDE_SENSITIVE_KEY) === '1';
   function applyHideSensitive() {
     document.body.classList.toggle('hide-sensitive', hideSensitive);
-    [el('pricesEyeBtn'), el('catalogEyeBtn')].forEach(btn => {
+    [el('pricesEyeBtn'), el('catalogEyeBtn'), el('tripEyeBtn')].forEach(btn => {
       if (!btn) return;
       btn.innerHTML = hideSensitive ? EYE_OFF_SVG : EYE_SVG;
       btn.setAttribute('aria-pressed', String(hideSensitive));
@@ -2556,6 +2617,7 @@
   }
   el('pricesEyeBtn').addEventListener('click', toggleHideSensitive);
   el('catalogEyeBtn').addEventListener('click', toggleHideSensitive);
+  el('tripEyeBtn').addEventListener('click', toggleHideSensitive);
   applyHideSensitive();
 
   el('clearFilterBtn').addEventListener('click', () => {
@@ -2813,6 +2875,8 @@
     document.body.dataset.tab = 'trips';
     filterPanel.classList.remove('open');
     el('tripLinkDock').style.display = 'none';
+    setExpensesOpen(false);
+    el('tripEditOverlay').classList.remove('open');
     // The "previous trips" dock belongs to the calendar list screen, not the drilled-into
     // detail screen — it would otherwise float over the detail view's own content.
     el('tripsDock').classList.remove('show');
@@ -2830,7 +2894,7 @@
     if (start && (!end || end < start)) end = start;
     let state = 'upcoming', status = '', headline = place;
     if (!start) status = 'NO DATES YET';
-    else if (start <= today && today <= end) { state = 'active'; status = '<span class="trip-widget-dot"></span>ACTIVE TRIP'; headline = place + ' – today'; }
+    else if (start <= today && today <= end) { state = 'active'; status = '<span class="trip-widget-dot"></span>' + tripDayLabel(start, end, today); headline = 'Active ' + place + ' Trip'; }
     else if (end < today) { state = 'past'; status = 'PAST TRIP'; }
     else {
       const days = daysBetween(today, start);
@@ -2846,7 +2910,7 @@
       dates = fmtShortDate(start) + (end !== start ? ' – ' + fmtShortDate(end) : '') +
         (nights ? ' · ' + nights + (nights === 1 ? ' night' : ' nights') : '');
     }
-    el('tripDetailDates').textContent = dates || 'Add the dates below';
+    el('tripDetailDates').textContent = dates || 'Add dates in Edit trip details';
     el('tripDetailTitle').textContent = label;
   }
 
@@ -2865,12 +2929,22 @@
     const meta = await loadTripMeta();
     const flightCost = (meta[label] && meta[label].flight_cost) || 0;
     const hotelCost = (meta[label] && meta[label].hotel_cost) || 0;
-    el('tripDetailFlight').value = flightCost || '';
-    el('tripDetailHotel').value = hotelCost || '';
+    // A save re-renders while the edit sheet is still open: leave alone whichever field is being
+    // typed in, or a slow save would wipe what was typed after it.
+    const fill = (id, value) => { if (document.activeElement !== el(id)) el(id).value = value; };
+    fill('tripDetailFlight', flightCost || '');
+    fill('tripDetailHotel', hotelCost || '');
     fitMoneyInput(el('tripDetailFlight'));
     fitMoneyInput(el('tripDetailHotel'));
-    el('tripDetailStart').value = (meta[label] && meta[label].start_date) || '';
-    el('tripDetailEnd').value = (meta[label] && meta[label].end_date) || '';
+    fill('tripDetailStart', (meta[label] && meta[label].start_date) || '');
+    fill('tripDetailEnd', (meta[label] && meta[label].end_date) || '');
+    const showCost = (id, n) => {
+      el(id).textContent = n ? fmtGBP(n) : 'None';
+      el(id).classList.toggle('none', !n);
+    };
+    showCost('tripExpensesTotal', flightCost + hotelCost);
+    showCost('tripExpensesFlight', flightCost);
+    showCost('tripExpensesHotel', hotelCost);
     renderTripDetailHero(label, meta[label] && meta[label].start_date, meta[label] && meta[label].end_date);
     const net = profit - flightCost - hotelCost;
     // The small tiles show whole pounds so a four-figure revenue still fits a third of the width.
@@ -2879,8 +2953,8 @@
       '</span><span class="td-stat-value">' + value + '</span>' + (note ? '<span class="td-stat-note">' + note + '</span>' : '') + '</div>';
     el('tripDetailStats').innerHTML =
       stat('net', 'Net profit', '<span class="trip-figure ' + (net >= 0 ? 'trip-net-pos' : 'trip-net-neg') + '">' + (net < 0 ? '−' : '') + fmtGBP(Math.abs(net)) + '</span>',
-        'Profit minus <span class="trip-figure">' + fmtGBP(flightCost + hotelCost) + '</span> flight and hotel') +
-      stat('', 'Items', items.length + (sold.length ? ' <small>· ' + sold.length + ' sold</small>' : '')) +
+        'After <span class="trip-figure">' + fmtGBP(flightCost + hotelCost) + '</span> expenses') +
+      stat('', 'Items', '<span class="trip-figure">' + items.length + (sold.length ? ' <small>· ' + sold.length + ' sold</small>' : '') + '</span>') +
       stat('', 'Revenue', '<span class="trip-figure">' + wholeGBP(revenue) + '</span>') +
       stat('', 'Profit', '<span class="trip-figure">' + wholeGBP(profit) + '</span>');
     el('tripDetailCount').textContent = items.length || '';
@@ -2902,6 +2976,24 @@
     input.style.width = Math.max(4, (input.value || input.placeholder).length + 1) + 'ch';
   }
   ['tripDetailFlight', 'tripDetailHotel'].forEach(id => el(id).addEventListener('input', () => fitMoneyInput(el(id))));
+
+  function setExpensesOpen(open) {
+    el('tripExpensesBtn').setAttribute('aria-expanded', String(open));
+    el('tripExpensesBreakdown').hidden = !open;
+  }
+  el('tripExpensesBtn').addEventListener('click', () =>
+    setExpensesOpen(el('tripExpensesBtn').getAttribute('aria-expanded') !== 'true'));
+
+  // The fields save on change, as they did on the page itself, so closing the sheet just blurs
+  // whichever one is focused (which fires that change) and hides it.
+  function closeTripEdit() {
+    if (document.activeElement) document.activeElement.blur();
+    el('tripEditOverlay').classList.remove('open');
+  }
+  el('tripEditBtn').addEventListener('click', () => el('tripEditOverlay').classList.add('open'));
+  el('tripEditDone').addEventListener('click', closeTripEdit);
+  el('tripEditClose').addEventListener('click', closeTripEdit);
+  el('tripEditOverlay').addEventListener('click', e => { if (e.target === el('tripEditOverlay')) closeTripEdit(); });
 
   const TRIP_DETAIL_FIELD_MAP = {
     tripDetailFlight: 'flight_cost', tripDetailHotel: 'hotel_cost',
@@ -4661,6 +4753,12 @@
     const place = words.length ? words.join(' ') : label.trim();
     return place === place.toUpperCase() ? place.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : place;
   }
+  // Once the countdown is over the headline says "Active Paris Trip", so the small label says
+  // which day of it this is instead of repeating that.
+  function tripDayLabel(start, end, today) {
+    const total = daysBetween(start, end) + 1;
+    return total > 1 ? 'DAY ' + (daysBetween(start, today) + 1) + ' OF ' + total : 'TODAY';
+  }
 
   // Active trips first, then the next upcoming ones, at most 2. Past trips and trips without a
   // start date never show. A trip with no end date (or one before its start) is one day long.
@@ -4684,14 +4782,14 @@
     if (isActive) {
       const label = document.createElement('div');
       label.className = 'trip-widget-label';
-      label.innerHTML = '<span class="trip-widget-dot"></span>ACTIVE TRIP';
+      label.innerHTML = '<span class="trip-widget-dot"></span>' + tripDayLabel(trip.start, trip.end, today);
       card.appendChild(label);
     }
     const main = document.createElement('div');
     main.className = 'trip-widget-main';
     const place = tripPlaceName(trip.label);
     const days = daysBetween(today, trip.start);
-    main.textContent = isActive ? place + ' – today' : days === 1 ? place + ' tomorrow' : place + ' in ' + days + ' days';
+    main.textContent = isActive ? 'Active ' + place + ' Trip' : days === 1 ? place + ' tomorrow' : place + ' in ' + days + ' days';
     card.appendChild(main);
     const dates = document.createElement('div');
     dates.className = 'trip-widget-dates';
