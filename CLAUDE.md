@@ -216,9 +216,22 @@ Two brands can't derive the UK/FR pair at all:
   canonicalises on its trailing product code and tolerates a mismatched slug — Hermès 403s a
   locale-swapped URL that keeps the wrong locale's slug words (confirmed live), and 403s a
   slug-less/code-only URL too. There's no way to derive one locale's link from the other.
-- **Loro Piana**: locale is a subdomain (`fr.`/`uk.`), and the two locales use *different*
-  trailing product codes for what the site presents as the same item, not just different slug
-  words — confirmed directly from real example links (`FAO4831_M15K` vs `FAR0854_B5VY`).
+- **Loro Piana**: locale is a subdomain (`fr.`/`uk.`) and the slug words are translated. An
+  early pair of example links had different codes (`FAO4831_M15K` vs `FAR0854_B5VY`), but per the
+  user the part before the first underscore (`FAO2625` in `...-loafer-FAO2625_30ES_37.html`) is
+  the product id, and Google finds the other locale's page by searching `"fr.loropiana FAO2625"`.
+
+  So Loro Piana is searched **by id, never by link or name** (explicit product instruction,
+  after the name search below gave €950 for a €990 loafer). `BRANDS.loropiana` has `code(url)`
+  and `searchQuery(code, locale)`; `productCode` prefers a brand's `code()`. Both
+  `findOtherLocaleLink` (link only) and `trySerperFill` (name and price, each side, replacing
+  `serperLookup`/`serperPriceByText` for this brand) call `serperCodeLookup`. It accepts only a
+  result on that locale's subdomain whose link contains the id, takes link, title and price from
+  that one result, and falls back to Shopping only with that page's title. If it finds nothing,
+  the price stays blank: nothing looser is tried. The old `findOtherLocaleLink` took the first
+  page on the other subdomain from a search for the pasted link, so a similar item's page (and
+  price) could be adopted as "the FR link". `serperSearch` caches a response for 5 minutes, so
+  the "fr.loropiana <id>" search shared by both steps is only paid for once.
 
 For these, `build(url)` deliberately returns an identical `{ uk, fr }` pair. `startCheckFromUrl`
 already had a generic fallback for exactly this ("couldn't work out the FR/UK pair — paste both

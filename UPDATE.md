@@ -6,6 +6,17 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-11-11 — Loro Piana prices found by product id
+
+A Loro Piana loafer came back at €950 when the French price is €990. When the app looked for the
+French page, it took the first French Loro Piana page Google showed, which can be a similar item.
+Now every Loro Piana link is searched by its product id, the part before the first underscore
+(`FAO2625` in `...-loafer-FAO2625_30ES_37.html`): "uk.loropiana FAO2625" for the UK name and price,
+"fr.loropiana FAO2625" for the French one. A result only counts if its link has that id in it. If
+none does, the price is left blank for you to fill in rather than guessed.
+
+---
+
 ## 2026-11-11 (late night) — Remove from a trip, delete only in the Catalog
 
 Tapping a product on a trip page used to offer "Delete product", which wiped it from the whole

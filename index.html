@@ -2044,7 +2044,17 @@
       // pair makes startCheckFromUrl's existing "couldn't work out the FR/UK pair — paste both
       // manually" fallback kick in, reusing that flow instead of building bespoke UI for this.
       build: (url) => ({ uk: url, fr: url }),
-      localePatterns: { fr: /^https?:\/\/fr\./i, uk: /^https?:\/\/uk\./i }
+      localePatterns: { fr: /^https?:\/\/fr\./i, uk: /^https?:\/\/uk\./i },
+      // The product id is the part of the code before the first underscore ("FAO2625" in
+      // ".../summer-charms-walk-loafer-FAO2625_30ES_37.html"). Searching Google for
+      // "fr.loropiana FAO2625" brings up the French page with its name and price (product
+      // instruction, after the old search by name gave €950 for a €990 loafer), so every
+      // Loro Piana lookup searches that way and only trusts a result whose link has the id in it.
+      code: (url) => {
+        const m = (getSku(url) || '').replace(/\.html?$/i, '').match(/([a-z]{2,4}\d{3,})_[^-]*$/i);
+        return m ? m[1] : null;
+      },
+      searchQuery: (code, locale) => locale + '.loropiana ' + code
     },
     chanel: { name:'Chanel', test: h => h.includes('chanel.com'), scrapeBlocked:true,
       // Confirmed live: both /gb/fashion/ and /fr/mode/ product URLs 403 under a plain fetch
@@ -5167,16 +5177,61 @@
     return top ? { title: top.title || null, price: top.price || null } : null;
   }
 
-  // Runs one Google organic search via Serper and returns the raw `organic` array.
-  async function serperOrganicSearch(query, token, isFr, num) {
+  // Runs one Google search via Serper and returns the whole response. A search repeated within
+  // a few minutes reuses the first answer: finding a Loro Piana item's other link and then
+  // looking up its price run the same "fr.loropiana <id>" search, and each one is paid for.
+  const serperCache = new Map();
+  const SERPER_CACHE_MS = 5 * 60 * 1000;
+  async function serperSearch(query, token, isFr, num) {
+    const body = JSON.stringify({ q: query, num, gl: isFr ? 'fr' : 'gb', hl: isFr ? 'fr' : 'en' });
+    const hit = serperCache.get(body);
+    if (hit && Date.now() - hit.at < SERPER_CACHE_MS) return hit.data;
     const res = await fetch('https://google.serper.dev/search', {
       method: 'POST',
       headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ q: query, num, gl: isFr ? 'fr' : 'gb', hl: isFr ? 'fr' : 'en' })
+      body
     });
-    if (!res.ok) return [];
+    if (!res.ok) return null;
     const data = await res.json();
+    serperCache.set(body, { at: Date.now(), data });
+    return data;
+  }
+
+  // Runs one Google organic search via Serper and returns the raw `organic` array.
+  async function serperOrganicSearch(query, token, isFr, num) {
+    const data = await serperSearch(query, token, isFr, num);
     return (data && data.organic) || [];
+  }
+
+  // The brand whose site a link is on, or null.
+  function brandForUrl(url) {
+    try { const h = new URL(url).hostname; return Object.values(BRANDS).find(b => b.test(h)) || null; }
+    catch (e) { return null; }
+  }
+
+  // For a brand searched by its product id (Loro Piana, see BRANDS.loropiana.searchQuery): finds
+  // that id's page for one locale and takes its link, name and price from that one result. A
+  // result only counts if it's on that locale's site and its link has the id in it, so a
+  // different item that happens to show up in the same search is never used.
+  async function serperCodeLookup(brand, code, locale, token, brandLabel, linkOnly) {
+    const isFr = locale === 'fr';
+    const results = await serperOrganicSearch(brand.searchQuery(code, locale), token, isFr, 10);
+    const page = results.find(r => {
+      if (!r.link || !brand.localePatterns[locale].test(r.link)) return false;
+      try { if (!brand.test(new URL(r.link).hostname)) return false; } catch (e) { return false; }
+      return r.link.toLowerCase().includes(code.toLowerCase());
+    });
+    if (!page) return null;
+    const text = [page.title, page.snippet].filter(Boolean).join(' ');
+    const m = isFr ? text.match(/€\s?\d(?:[\d,.\s]*\d)?|\d(?:[\d,.\s]*\d)?\s?€/) : text.match(/£\s?\d(?:[\d,.\s]*\d)?/);
+    let price = m ? m[0] : null;
+    // Same Shopping fallback serperLookup uses, and only ever with the confirmed page's name.
+    if (!price && page.title && !linkOnly) {
+      const shop = await serperShoppingLookup(page.title + (isFr ? ' France' : ''), token, isFr, brandLabel)
+        .catch(err => { console.error('serperShoppingLookup (code)', err); return null; });
+      if (shop && shop.price) price = shop.price;
+    }
+    return { link: page.link, title: page.title || null, price };
   }
 
   // Finds a price for a specific locale using ONLY a text query — no URL for that locale
@@ -5219,11 +5274,11 @@
   // found, even with the right page sitting in the results. Uses the brand's own sku extractor
   // where it has one (Chanel, Burberry), otherwise the longest piece of the last segment with a
   // digit in it (Gucci "...-p-443497DTDIT1000", Balenciaga "...-6713091VG9Y1000.html").
+  // A brand's own code() (Loro Piana) comes first.
   function productCode(url) {
-    let hostname;
-    try { hostname = new URL(url).hostname; } catch (e) { return null; }
-    const brand = Object.values(BRANDS).find(b => b.test(hostname));
-    const own = brand && brand.sku && brand.sku(url);
+    try { new URL(url); } catch (e) { return null; }
+    const brand = brandForUrl(url);
+    const own = brand && ((brand.code && brand.code(url)) || (brand.sku && brand.sku(url)));
     if (own) return own;
     const last = getSku(url);
     if (!last) return null;
@@ -5375,14 +5430,16 @@
   async function findOtherLocaleLink(pastedUrl, token, brand, otherLocale) {
     const pattern = brand.localePatterns && brand.localePatterns[otherLocale];
     if (!pattern) return null;
+    // Loro Piana: search "fr.loropiana <id>" and take only a page with that id in its link.
+    // Searching the pasted link used to accept any page on the other site, other items included.
+    const code = brand.searchQuery ? productCode(pastedUrl) : null;
+    if (code) {
+      const found = await serperCodeLookup(brand, code, otherLocale, token, brand.name, true);
+      return found ? found.link : null;
+    }
     const isFr = otherLocale === 'fr';
-    const res = await fetch('https://google.serper.dev/search', {
-      method: 'POST',
-      headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ q: pastedUrl, num: 10, gl: isFr ? 'fr' : 'gb', hl: isFr ? 'fr' : 'en' })
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
+    const data = await serperSearch(pastedUrl, token, isFr, 10);
+    if (!data) return null;
     const pools = [...((data && data.organic) || []), ...((data && data.shopping) || [])];
     const match = pools.find(r => {
       if (!r.link || !pattern.test(r.link)) return false;
@@ -5461,7 +5518,25 @@
       // A side whose price is already on the card (from the catalog or the known-SKU cache) isn't
       // searched again: applyPrice would refuse to overwrite it anyway.
       const hasPrice = fieldId => current.catalogId === id && !!el(fieldId).value;
-      if (ukUrl && !hasPrice('ukPrice')) {
+
+      // Loro Piana is searched by its product id for each side ("uk.loropiana FAO2625", then
+      // "fr.loropiana FAO2625"), with or without a link for that side, in place of every search
+      // below. Nothing else is tried if that finds no price: the search by name it replaces gave
+      // a similar item's price (€950 for a €990 loafer), and a blank is safer than a wrong number.
+      const codeBrand = brandForUrl(ukUrl || frUrl);
+      const code = codeBrand && codeBrand.searchQuery ? (productCode(ukUrl) || productCode(frUrl)) : null;
+      if (code) {
+        for (const [locale, fieldId] of [['uk', 'ukPrice'], ['fr', 'frPrice']]) {
+          if (hasPrice(fieldId)) continue;
+          if (current.catalogId === id) setPriceLoading(fieldId, true);
+          const info = await serperCodeLookup(codeBrand, code, locale, token, brandLabel).catch(err => { console.error('serperCodeLookup', locale, id, err); return null; });
+          applyName(info && info.title);
+          applyPrice(fieldId, info ? parseMoney(info.price) : null);
+          if (current.catalogId === id) { setPriceLoading(fieldId, false); recalc(); }
+        }
+      }
+
+      if (ukUrl && !code && !hasPrice('ukPrice')) {
         if (current.catalogId === id && !el('ukPrice').value) setPriceLoading('ukPrice', true);
         const ukInfo = await serperLookup(ukUrl, token, new URL(ukUrl).hostname, brandLabel).catch(err => { console.error('serperLookup (UK)', id, err); return null; });
         applyName(ukInfo && ukInfo.title);
@@ -5469,7 +5544,7 @@
         if (current.catalogId === id) { setPriceLoading('ukPrice', false); recalc(); }
       }
 
-      if (frUrl && !hasPrice('frPrice')) {
+      if (frUrl && !code && !hasPrice('frPrice')) {
         if (current.catalogId === id && !el('frPrice').value) setPriceLoading('frPrice', true);
         const frInfo = await serperLookup(frUrl, token, new URL(frUrl).hostname, brandLabel).catch(err => { console.error('serperLookup (FR)', id, err); return null; });
         applyName(frInfo && frInfo.title);
@@ -5482,7 +5557,7 @@
       // name the block above just found (or, failing that, the known side's own product code),
       // never left to require pasting a link just to see a number.
       const knownUrl = ukUrl || frUrl;
-      if (knownUrl && (!ukUrl || !frUrl)) {
+      if (knownUrl && !code && (!ukUrl || !frUrl)) {
         const missingField = ukUrl ? 'frPrice' : 'ukPrice';
         const missingIsFr = !!ukUrl; // missing the FR side exactly when the UK side is the known one
         if (current.catalogId === id && !el(missingField).value) {
