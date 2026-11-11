@@ -13,7 +13,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
@@ -187,6 +187,47 @@
      never unset), so .open needs enough specificity to win over the rule above, or the panel
      it just asked to show stays invisible. */
   body.result-active #pricesView > .manual-panel.open{display:flex;}
+
+  /* home trip widget — Widgetsmith-style cards above the home screen's pitch copy. Same fixed
+     colours in light and dark, like an iOS widget. Hidden with the pitch copy once a result card
+     is up, so the card still fits on one screen. */
+  .trip-widgets{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin:10px 0 14px;}
+  .trip-widgets[hidden]{display:none;}
+  body.result-active #pricesView > .trip-widgets{display:none;}
+  .trip-widget{
+    flex:1 1 280px;max-width:360px;aspect-ratio:2/1;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+    padding:16px 18px;border:none;border-radius:26px;
+    background:#e4d9d2;color:#6b5d57;
+    box-shadow:0 1px 2px rgba(0,0,0,.06), 0 8px 20px rgba(0,0,0,.10);
+    font:inherit;text-align:center;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+    transition:transform .12s ease, filter .12s ease;
+  }
+  .trip-widget:active{transform:scale(.97);filter:brightness(.96);}
+  .trip-widget-main{
+    /* DM Serif Display only ships one (already heavy) weight: 700 plus no synthesis keeps it as
+       drawn, while the Georgia fallback gets its real bold. */
+    font-family:'DM Serif Display',Georgia,serif;font-weight:700;font-synthesis:none;
+    font-size:clamp(28px, 9vw, 40px);line-height:1.05;letter-spacing:-.01em;
+    display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .trip-widget-dates{font-size:13px;font-weight:500;opacity:.8;}
+  .trip-widget.active{background:#cfe0c9;color:#3f5a43;}
+  .trip-widget-label{
+    display:flex;align-items:center;gap:6px;
+    font-size:10.5px;font-weight:700;letter-spacing:.12em;
+  }
+  .trip-widget-dot{width:7px;height:7px;border-radius:50%;background:#4f9a5a;animation:tripDotPulse 1.6s ease-in-out infinite;}
+  @keyframes tripDotPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.35;transform:scale(.75);}}
+  .trip-widget.empty{
+    aspect-ratio:auto;padding:14px 18px;background:var(--surface);color:var(--muted);box-shadow:none;
+  }
+  .trip-widget.empty .trip-widget-main{font-size:20px;color:var(--ink);}
+  @media (prefers-reduced-motion:reduce){
+    .trip-widget{transition:none;}
+    .trip-widget-dot{animation:none;}
+  }
 
   /* search dock — pinned above the tab bar, Uber "Where to?"-style, so it's reachable with
      a thumb without scrolling. Visibility is its own state (dock-open), independent of
@@ -1004,6 +1045,7 @@
 
   <main class="view active" id="pricesView">
     <button type="button" class="text-link card-back-btn" id="cardBackBtn">← Back</button>
+    <div class="trip-widgets" id="tripWidgets" hidden></div>
     <h1>KICKBROS HUB</h1>
     <p class="sub">Drop in a designer product page and we'll work out what to charge after the détaxe refund.</p>
 
@@ -2567,7 +2609,13 @@
 
   function openTripDetail(label) {
     Object.keys(views).forEach(k => views[k].classList.remove('active'));
+    // Plan next trip ("Use this trip" -> Create trip) and the home trip widget both open a trip
+    // from outside the Trips tab; the screen it came from must not stay up underneath.
+    el('planTripView').classList.remove('active');
+    el('clientDetailView').classList.remove('active');
     el('tripDetailView').classList.add('active');
+    current.tripLabel = null;
+    el('tripAddRow').classList.remove('show');
     tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === 'trips'));
     document.body.dataset.tab = 'trips';
     filterPanel.classList.remove('open');
@@ -3358,10 +3406,13 @@
     const endDate = el('newTripEnd').value || null;
     const flight = parseFloat(el('newTripFlight').value) || 0;
     const hotel = parseFloat(el('newTripHotel').value) || 0;
+    // Disabled while saving so a second tap can't open the trip twice.
+    el('newTripCreate').disabled = true;
     const { error } = await db.from('trips').upsert({
       trip_label: name, flight_cost: flight, hotel_cost: hotel, start_date: startDate, end_date: endDate,
       updated_at: new Date().toISOString()
     });
+    el('newTripCreate').disabled = false;
     if (error) { alert('Couldn’t create the trip: ' + error.message); return; }
     closeNewTripModal();
     openTripDetail(name);
@@ -4338,8 +4389,105 @@
     if (name === 'catalog') renderCatalog();
     if (name === 'clients') renderClients();
     if (name === 'trips') renderTripsCalendar();
+    if (name === 'prices') renderTripWidget();
   }
   tabButtons.forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+  // ---- home trip widget ----
+  // Trip dates are plain calendar dates, so "today" is taken in Europe/London rather than from a
+  // UTC timestamp or the device's own zone: a trip is active all day, and the countdown changes
+  // at London midnight.
+  function londonToday() {
+    const parts = {};
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' })
+      .formatToParts(new Date()).forEach(p => { parts[p.type] = p.value; });
+    return parts.year + '-' + parts.month + '-' + parts.day;
+  }
+  function daysBetween(fromStr, toStr) {
+    const utc = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+    return Math.round((utc(toStr) - utc(fromStr)) / 86400000);
+  }
+  function asDateStr(v) {
+    const s = v ? String(v).slice(0, 10) : '';
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+  }
+  // "PARIS AUGUST 2026" -> "Paris": a trip label is usually place + month + year, and the widget
+  // only wants the place. Falls back to the whole label if nothing would be left.
+  const TRIP_LABEL_FILLER = /^(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sept?(ember)?|oct(ober)?|nov(ember)?|dec(ember)?|mid|early|late|end|start|trip|\d+(st|nd|rd|th)?)$/i;
+  function tripPlaceName(label) {
+    const words = label.trim().split(/\s+/).filter(w => !TRIP_LABEL_FILLER.test(w));
+    const place = words.length ? words.join(' ') : label.trim();
+    return place === place.toUpperCase() ? place.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : place;
+  }
+
+  // Active trips first, then the next upcoming ones, at most 2. Past trips and trips without a
+  // start date never show. A trip with no end date (or one before its start) is one day long.
+  function pickWidgetTrips(rows, today) {
+    const trips = rows.map(t => {
+      const start = asDateStr(t.start_date);
+      if (!start) return null;
+      const end = asDateStr(t.end_date);
+      return { label: t.trip_label, start, end: end && end >= start ? end : start };
+    }).filter(Boolean).sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+    const active = trips.filter(t => t.start <= today && today <= t.end);
+    const upcoming = trips.filter(t => t.start > today);
+    return active.concat(upcoming).slice(0, 2);
+  }
+
+  function buildTripWidget(trip, today) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    const isActive = trip.start <= today;
+    card.className = 'trip-widget' + (isActive ? ' active' : '');
+    if (isActive) {
+      const label = document.createElement('div');
+      label.className = 'trip-widget-label';
+      label.innerHTML = '<span class="trip-widget-dot"></span>ACTIVE TRIP';
+      card.appendChild(label);
+    }
+    const main = document.createElement('div');
+    main.className = 'trip-widget-main';
+    const place = tripPlaceName(trip.label);
+    const days = daysBetween(today, trip.start);
+    main.textContent = isActive ? place + ' – today' : days === 1 ? place + ' tomorrow' : place + ' in ' + days + ' days';
+    card.appendChild(main);
+    const dates = document.createElement('div');
+    dates.className = 'trip-widget-dates';
+    dates.textContent = fmtShortDate(trip.start) + (trip.end !== trip.start ? ' – ' + fmtShortDate(trip.end) : '');
+    card.appendChild(dates);
+    card.addEventListener('click', () => openTripDetail(trip.label));
+    return card;
+  }
+
+  // Reads `trips` itself rather than through loadTripMeta, because that hides a failed read as
+  // "no trips", and the widget must not say "No trips planned" when it couldn't check. Without a
+  // database, or on a failed read, it just stays hidden. A newer render beats an older one still
+  // waiting on its read.
+  let tripWidgetRenderSeq = 0;
+  async function renderTripWidget() {
+    const seq = ++tripWidgetRenderSeq;
+    const wrap = el('tripWidgets');
+    if (!db) { wrap.hidden = true; return; }
+    const { data, error } = await db.from('trips').select('trip_label, start_date, end_date');
+    if (seq !== tripWidgetRenderSeq) return;
+    if (error) { console.error('renderTripWidget', error); wrap.hidden = true; return; }
+    const today = londonToday();
+    const trips = pickWidgetTrips(data || [], today);
+    wrap.innerHTML = '';
+    if (trips.length) {
+      trips.forEach(t => wrap.appendChild(buildTripWidget(t, today)));
+    } else {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'trip-widget empty';
+      card.innerHTML = '<span class="trip-widget-main">No trips planned</span><span class="trip-widget-dates">Plan next trip →</span>';
+      card.addEventListener('click', openPlanTrip);
+      wrap.appendChild(card);
+    }
+    wrap.hidden = false;
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') renderTripWidget(); });
+  renderTripWidget();
 
   // Re-renders whichever list is currently on screen after a product edit/delete made from the
   // product-detail modal (Catalog row, Trip Detail row, or a client's purchase-history row) —

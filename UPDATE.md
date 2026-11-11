@@ -6,6 +6,24 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-11-11 — Trip widget on the home screen, straight into a new trip
+
+### Trip widget on the home screen
+
+The top of the home screen now shows your next trip as a widget: "Paris in 9 days" (or
+"tomorrow"), with the dates underneath. While you're on a trip it turns green and says "Active
+trip". If one trip is on and another is coming up, both show (two at most). Past trips don't
+show, and with nothing planned it says "No trips planned" and takes you to Plan next trip. Tap a
+trip to open it. Days are counted on UK time, so the countdown changes at midnight.
+
+### Creating a trip opens it
+
+"Create trip" already opened the new trip, but when you created it from Plan next trip's "Use
+this trip", the Plan next trip screen stayed on top of it. Fixed. The button also can't be
+double-tapped while it's saving.
+
+---
+
 ## 2026-11-04 — Pick your own days, and "Update now" fixed
 
 ### Fix: "Closest available" could show an afternoon flight

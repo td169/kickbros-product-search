@@ -550,11 +550,16 @@ Excel-imported trips still render with revenue/profit and just a blank cost fiel
 surfaces the failure via `alert()` and deliberately leaves its modal open so the user can retry
 once the table exists, rather than silently discarding what they typed.
 
-**Trip Detail** (`#tripDetailView`, opened via `openTripDetail(label)` from either the Trips
-list or right after creating a trip) is a separate screen from the four bottom-tab views — it's
-not in the `views` map that `switchTab` cycles through, so `switchTab` explicitly removes its
-`active` class on every tab change to make sure it doesn't linger on top of whichever tab was
-actually selected. From here you can add products two ways:
+**Trip Detail** (`#tripDetailView`, opened via `openTripDetail(label)` from the Trips list, the
+home trip widget, or right after "Create trip" saves) is a separate screen from the four
+bottom-tab views — it's not in the `views` map that `switchTab` cycles through, so `switchTab`
+explicitly removes its `active` class on every tab change to make sure it doesn't linger on top
+of whichever tab was actually selected. The reverse applies too: `openTripDetail` removes
+`active` from `#planTripView`/`#clientDetailView`, since "Use this trip" → Create trip opens a
+trip from Plan next trip, and that screen used to stay up underneath. "Create trip" waits for its
+upsert and only navigates on success (an error `alert()`s and leaves the modal open), and Trip
+Detail re-reads the row rather than trusting the form, so it shows what was actually saved.
+From here you can add products two ways:
 - **"+ Paste a link"** reveals an inline URL input reusing `startCheckFromUrl()` — the same
   brand-detection/scrape logic as the main dock's checkBtn (factored out into that shared
   function for exactly this reuse). Before calling it, `current.tripLabel` is set to the open
@@ -581,6 +586,26 @@ unrelated to what one customer happened to pay). Reopening an existing entry via
 `reopenCatalogEntry()` treats its stored `sale_price` the same way — pre-fills it and marks it
 overridden — so revisiting an item to fix its FR/UK RRP never silently nudges an
 already-recorded sale price.
+
+### Home trip widget (`#tripWidgets`, top of the Prices tab)
+
+Widgetsmith-style cards above the home screen's heading, built from the `trips` table's
+`start_date`/`end_date` (no schema of its own). Rules, all in `pickWidgetTrips`/`buildTripWidget`:
+- Active trips (today within start–end, inclusive) come first in green with "ACTIVE TRIP", then
+  upcoming ones ("Paris in 12 days", "Paris tomorrow"), capped at 2 cards. Past trips and trips
+  without a `start_date` never show; a missing or earlier-than-start `end_date` means a one-day trip.
+- "Today" is the **Europe/London** calendar date (`londonToday`), compared as `YYYY-MM-DD` strings,
+  never a UTC timestamp or the device's own zone, so a trip is active all day and the countdown
+  changes at London midnight. Recomputed on load, on switching back to Prices, and on
+  `visibilitychange` to visible (so it's right after midnight).
+- The place name comes from the label (`tripPlaceName`: "PARIS AUGUST 2026" → "Paris", dropping
+  month/year/filler words, falling back to the whole label).
+- With nothing active or upcoming, a quiet "No trips planned" card opens Plan next trip. It reads
+  `trips` itself rather than via `loadTripMeta`, which turns a failed read into `{}`: on a failed
+  read, or with no Supabase set up, the widget stays hidden instead of claiming no trips.
+- Hidden under `body.result-active` like the heading, so a result card still fits on one screen.
+- Cards are `flex: 1 1 280px; max-width: 360px` in a wrapping row, which would sit side by side
+  on a wider layout, but `.app` caps the column at 460px, so in practice they always stack.
 
 ### Known-SKU cache (`localStorage`, separate from the Catalog)
 
