@@ -5203,6 +5203,35 @@
     return (data && data.organic) || [];
   }
 
+  // All the text Google shows for one result that can carry its price. A product page's price is
+  // often not in the snippet but on its own line under it ("€2,020.00 · In stock"), which Serper
+  // returns in separate fields (attributes, price, priceRange...) that the price search used to
+  // skip, so a price sitting right there in Google came back blank. Every field except the link
+  // and sitelinks (other pages) is read, with " · " between them so numbers never run together.
+  function resultText(r) {
+    if (!r) return '';
+    const parts = [];
+    const add = v => {
+      if (v == null) return;
+      if (typeof v === 'object') Object.values(v).forEach(add);
+      else parts.push(String(v));
+    };
+    const sym = { EUR: '€', GBP: '£', '€': '€', '£': '£' }[String(r.currency || '').toUpperCase()];
+    if (r.price != null && sym && /^[\d\s.,]+$/.test(String(r.price))) parts.push(sym + r.price);
+    for (const [k, v] of Object.entries(r)) {
+      if (!['link', 'sitelinks', 'position', 'imageUrl', 'thumbnailUrl', 'favicon'].includes(k)) add(v);
+    }
+    return parts.join(' · ');
+  }
+
+  // A price in Google's text: either plain digits or digits in groups of three (1,090 / 11 400 /
+  // 2.020), then optional pence/cents. The old pattern took any run of digits, dots and spaces, so
+  // "Sac classique 11.12. 11 400,00 €" (a number in the name) read as €111,211,400. Only the
+  // French "11 400 €" form allows a space between groups: after a £ or € sign a space would join
+  // the price to whatever number follows it ("£860 100% calfskin").
+  const GBP_PRICE_RE = /£\s?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?/;
+  const EUR_PRICE_RE = /€\s?(?:\d{1,3}(?:[.,]\d{3})+|\d+)(?:[.,]\d{1,2})?|(?:\d{1,3}(?:[\s.,]\d{3})+|\d+)(?:[.,]\d{1,2})?\s?€/;
+
   // The brand whose site a link is on, or null.
   function brandForUrl(url) {
     try { const h = new URL(url).hostname; return Object.values(BRANDS).find(b => b.test(h)) || null; }
@@ -5222,8 +5251,8 @@
       return r.link.toLowerCase().includes(code.toLowerCase());
     });
     if (!page) return null;
-    const text = [page.title, page.snippet].filter(Boolean).join(' ');
-    const m = isFr ? text.match(/€\s?\d(?:[\d,.\s]*\d)?|\d(?:[\d,.\s]*\d)?\s?€/) : text.match(/£\s?\d(?:[\d,.\s]*\d)?/);
+    const text = resultText(page);
+    const m = isFr ? text.match(EUR_PRICE_RE) : text.match(GBP_PRICE_RE);
     let price = m ? m[0] : null;
     // Same Shopping fallback serperLookup uses, and only ever with the confirmed page's name.
     if (!price && page.title && !linkOnly) {
@@ -5252,9 +5281,9 @@
       : [];
     const extractPrice = r => {
       if (!r) return null;
-      const text = [r.title, r.snippet].filter(Boolean).join(' ');
-      const gbpMatch = text.match(/£\s?\d(?:[\d,.\s]*\d)?/);
-      const eurMatch = text.match(/€\s?\d(?:[\d,.\s]*\d)?|\d(?:[\d,.\s]*\d)?\s?€/);
+      const text = resultText(r);
+      const gbpMatch = text.match(GBP_PRICE_RE);
+      const eurMatch = text.match(EUR_PRICE_RE);
       return isFr ? (eurMatch ? eurMatch[0] : null) : (gbpMatch ? gbpMatch[0] : null);
     };
     let price = null;
@@ -5311,16 +5340,25 @@
     // Returns { productPage, shallow } rather than a single winner — keeping them separate lets
     // the caller prefer a *different query's* product-page match over *this* query's shallow
     // one, instead of only ever comparing within one query's own results.
+    // Chanel, Gucci, Dior, Prada and others keep both countries on one site with the same id in
+    // the link, so the UK page passes every check above when we want the French one (and the
+    // other way round). Its £ price then counted as "found", the € one was never searched for,
+    // and FR came back blank. So a page in this link's own country (same first part of the
+    // path, e.g. "fr" in chanel.com/fr/mode/...) is preferred.
+    const firstSeg = u => { try { return (new URL(u).pathname.split('/').filter(Boolean)[0] || '').toLowerCase(); } catch (e) { return ''; } };
+    const ourSeg = firstSeg(url);
+    const sameLocale = link => !/^[a-z]{2,3}([-_][a-z]{2,3})?$/.test(ourSeg) || firstSeg(link) === ourSeg;
     const pickCandidates = results => {
       const hostMatches = targetHostname
         ? results.filter(r => { try { return sameSite(new URL(r.link).hostname, targetHostname); } catch (e) { return false; } })
         : [];
-      return { productPage: hostMatches.find(r => isOurProductPage(r.link)) || null, shallow: hostMatches[0] || null };
+      const ours = hostMatches.filter(r => isOurProductPage(r.link));
+      return { productPage: ours.find(r => sameLocale(r.link)) || ours[0] || null, shallow: hostMatches[0] || null };
     };
     const extractFromText = r => {
-      const text = r ? [r.title, r.snippet].filter(Boolean).join(' ') : '';
-      const gbpMatch = text.match(/£\s?\d(?:[\d,.\s]*\d)?/);
-      const eurMatch = text.match(/€\s?\d(?:[\d,.\s]*\d)?|\d(?:[\d,.\s]*\d)?\s?€/);
+      const text = resultText(r);
+      const gbpMatch = text.match(GBP_PRICE_RE);
+      const eurMatch = text.match(EUR_PRICE_RE);
       return {
         title: r ? (r.title || null) : null,
         gbpPrice: gbpMatch ? gbpMatch[0] : null,
@@ -5378,12 +5416,14 @@
     // price from a candidate that's ALSO code-verified (`productPage`, never the unverified
     // `shallow`) — otherwise a different, unrelated product's price could get attached to this
     // one just because nothing code-verified turned up.
-    if (isConfirmedProductPage && !gbpPrice && !eurPrice) {
+    // "Missing" means the price in this link's own currency: a £ price found while looking for
+    // the € one (the other country's page) used to count as found and stop the search there.
+    const missing = () => isFr ? !eurPrice : !gbpPrice;
+    if (isConfirmedProductPage && missing()) {
       const p2 = await getSecondary();
       if (p2 && p2.productPage) {
         const retry = extractFromText(p2.productPage);
-        gbpPrice = retry.gbpPrice;
-        eurPrice = retry.eurPrice;
+        if (isFr) eurPrice = retry.eurPrice || eurPrice; else gbpPrice = retry.gbpPrice || gbpPrice;
       }
     }
 
@@ -5396,7 +5436,7 @@
     // homepage's marketing title matched some unrelated Dior product on Shopping). No confirmed
     // product page and no price found from organic search is the tolerated "couldn't find it"
     // outcome, not something to paper over with a guess.
-    if (!gbpPrice && !eurPrice && (isConfirmedProductPage || !top)) {
+    if (missing() && (isConfirmedProductPage || !top)) {
       // Same "+ France" addition as the organic retry above, only when querying by a real
       // confirmed title — appending it to the raw URL fallback (when nothing was ever
       // confirmed) wouldn't mean anything.

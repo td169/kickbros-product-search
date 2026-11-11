@@ -6,23 +6,20 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
-## 2026-11-11 — Loro Piana prices found by product id
+## 2026-11-11 — Chanel FR price: reading what Google actually shows
 
-A Loro Piana loafer came back at €950 when the French price is €990. When the app looked for the
-French page, it took the first French Loro Piana page Google showed, which can be a similar item.
-Now every Loro Piana link is searched by its product id, the part before the first underscore
-(`FAO2625` in `...-loafer-FAO2625_30ES_37.html`): "uk.loropiana FAO2625" for the UK name and price,
-"fr.loropiana FAO2625" for the French one. A result only counts if its link has that id in it. If
-none does, the price is left blank for you to fill in rather than guessed.
+Googling a Chanel link shows its French price straight away, but the app came back blank. Three
+reasons, all fixed:
 
----
-
-## 2026-11-11 (late night) — Remove from a trip, delete only in the Catalog
-
-Tapping a product on a trip page used to offer "Delete product", which wiped it from the whole
-catalog. There it now says **Remove from trip**: it comes off that trip and stays in the catalog
-(add it back any time with "From catalog"). Deleting a product outright is only offered when you
-open it from the Catalog. A client's purchase history no longer offers delete either.
+- **The price line under the result was never read.** Google often shows a product's price on its
+  own line ("11 400,00 € · En stock") rather than in the description text, and the app only read
+  the title and description. It now reads that line too, for every brand.
+- **The UK page counted as the French one.** Chanel's UK and French pages are on the same site
+  with the same product id (A01112B26277UE703), so the French search could land on the UK page,
+  find a £ price, and stop there without ever looking for the €. Now it prefers the French page and
+  keeps searching (by product id next) until it has a € price.
+- **Numbers in the name.** "Sac classique 11.12 … 11 400,00 €" read as €111,211,400 because the
+  "11.12" was joined onto the price. A price now has to look like one (1,090 / 11 400 / 990,00).
 
 ---
 
@@ -36,13 +33,6 @@ its backup searches (searching by product code, then Google Shopping), and you h
 yourself. It now checks by the product code, which is the same in both languages, so those backup
 searches run. Also, after a scrape the app no longer runs its price and photo searches at the same
 time, which can make Google return the wrong results.
-
-The biggest one, for Louis Vuitton, Dior, Prada, Loro Piana and Chanel: once a product had *any*
-price saved, checking it again never searched Google at all. So if the first check found the UK
-price but not the FR one, the FR price was never looked for again, however many times you pasted
-the link, even though Google shows it (e.g. the Écharpe Cold Reykjavik S00 at 2 020,00 €). Now a
-re-check searches for whichever price is still missing, and only skips the search once both are
-saved. It doesn't redo the photo search if the item already has a photo.
 
 ---
 

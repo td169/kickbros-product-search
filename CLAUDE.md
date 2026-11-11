@@ -366,8 +366,27 @@ elsewhere, double-check the callback actually receives a link string, not a resu
 `parseMoney` must handle UK format (`1,090.00`, comma thousands / dot decimal) and FR format
 (`1 090,00`, space thousands / comma decimal) — it disambiguates by treating whichever of `,`/`.`
 appears last in the string as the decimal separator. The regexes that extract a price substring
-from scraped text (in `pageFunctionSource`) or a Serper snippet (in `serperLookup`) must allow
-spaces inside the digit run for the same reason, or FR prices over ~€1,000 silently truncate.
+from scraped text (in `pageFunctionSource`) or a Serper snippet must allow spaces inside the digit
+run for the same reason, or FR prices over ~€1,000 silently truncate.
+
+Serper results share `GBP_PRICE_RE`/`EUR_PRICE_RE`, which only accept plain digits or groups of
+three (`1,090`, `11 400`, `2.020`) plus optional decimals. The older "any run of digits, dots and
+spaces" pattern joined a number in a product name onto the price: Chanel's
+`"Sac classique 11.12. 11 400,00 €"` read as €111,211,400. A space between groups is only allowed
+in the French suffix form (`11 400 €`); after a `£`/`€` sign it would join the next number on
+(`"£860 100% calfskin"`). `pageFunctionSource` keeps its own copy (it runs inside Apify).
+
+The text searched is `resultText(r)`, not just title + snippet: Google often puts a product's price
+on its own rich-result line ("€2,020.00 · In stock"), which Serper returns in other fields
+(`attributes`, `price` + `currency`, etc). Field names weren't confirmed against a live response,
+so it reads every field except `link`/`sitelinks`/images, joined with `" · "` so numbers from
+neighbouring fields can't run together.
+
+`serperLookup` also prefers a code-matched page in the link's own country (`sameLocale`: same
+first path segment, e.g. `fr` in `chanel.com/fr/mode/...`) and treats a price as "missing" per
+currency (`missing()`). Chanel, Gucci, Dior and Prada keep both countries on one host with the same
+id, so the UK page passed every check for the FR lookup; its £ counted as found, the code retry and
+Shopping were skipped, and FR came back blank.
 
 ### Pricing engine (`recalc`)
 
