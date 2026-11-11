@@ -188,23 +188,29 @@
      it just asked to show stays invisible. */
   body.result-active #pricesView > .manual-panel.open{display:flex;}
 
-  /* home trip widget — Widgetsmith-style cards above the home screen's pitch copy. Same fixed
-     colours in light and dark, like an iOS widget. Hidden with the pitch copy once a result card
-     is up, so the card still fits on one screen. */
-  .trip-widgets{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin:10px 0 14px;}
+  /* home screen — iOS-style widgets: the time-sensitive trip widget full width at the top, then
+     one small widget per section, 2 per row. Fixed dark colours in light and dark mode alike,
+     like a real widget. */
+  .trip-widgets{display:flex;flex-direction:column;gap:12px;margin:6px 0 12px;}
   .trip-widgets[hidden]{display:none;}
-  body.result-active #pricesView > .trip-widgets{display:none;}
+  /* Paris at night: a faint lit Eiffel Tower on midnight blue (green while the trip is on). */
   .trip-widget{
-    flex:1 1 280px;max-width:360px;aspect-ratio:2/1;
+    --tower:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 120'%3E%3Cpath fill='%23e8c88c' fill-opacity='.2' d='M30 0 31 10h1l.6 8h.9l2.5 28h3v3h-1.5l4.5 23h4v4h-2l10 42H42c-2-14-7-21-12-21s-10 7-12 21H6l10-42h-2v-4h4l4.5-23H21v-3h3l2.5-28h.9l.6-8h1z'/%3E%3C/svg%3E");
+    width:100%;aspect-ratio:2/1;position:relative;overflow:hidden;
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
     padding:16px 18px;border:none;border-radius:26px;
-    background:#e4d9d2;color:#6b5d57;
-    box-shadow:0 1px 2px rgba(0,0,0,.06), 0 8px 20px rgba(0,0,0,.10);
+    background:
+      var(--tower) no-repeat right 7% bottom -2px / auto 82%,
+      radial-gradient(circle at 84% 78%, rgba(232,200,140,.20), transparent 52%),
+      linear-gradient(165deg, #1e2b55 0%, #121b3a 48%, #0a0f22 100%);
+    color:#f3e9da;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.06), 0 10px 24px rgba(0,0,0,.28);
     font:inherit;text-align:center;cursor:pointer;
     -webkit-tap-highlight-color:transparent;
     transition:transform .12s ease, filter .12s ease;
   }
-  .trip-widget:active{transform:scale(.97);filter:brightness(.96);}
+  .trip-widget > *{position:relative;}
+  .trip-widget:active{transform:scale(.97);filter:brightness(1.12);}
   .trip-widget-main{
     /* DM Serif Display only ships one (already heavy) weight: 700 plus no synthesis keeps it as
        drawn, while the Georgia fallback gets its real bold. */
@@ -212,22 +218,53 @@
     font-size:clamp(28px, 9vw, 40px);line-height:1.05;letter-spacing:-.01em;
     display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
   }
-  .trip-widget-dates{font-size:13px;font-weight:500;opacity:.8;}
-  .trip-widget.active{background:#cfe0c9;color:#3f5a43;}
+  .trip-widget-dates{font-size:13px;font-weight:500;opacity:.7;}
+  .trip-widget.active{
+    background:
+      var(--tower) no-repeat right 7% bottom -2px / auto 82%,
+      radial-gradient(circle at 84% 78%, rgba(232,200,140,.18), transparent 52%),
+      linear-gradient(165deg, #22543b 0%, #143524 48%, #0a1d13 100%);
+    color:#eef6ec;
+  }
   .trip-widget-label{
     display:flex;align-items:center;gap:6px;
-    font-size:10.5px;font-weight:700;letter-spacing:.12em;
+    font-size:10.5px;font-weight:700;letter-spacing:.12em;color:#a9e2b8;
   }
-  .trip-widget-dot{width:7px;height:7px;border-radius:50%;background:#4f9a5a;animation:tripDotPulse 1.6s ease-in-out infinite;}
+  .trip-widget-dot{width:7px;height:7px;border-radius:50%;background:#5fd884;animation:tripDotPulse 1.6s ease-in-out infinite;}
   @keyframes tripDotPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.35;transform:scale(.75);}}
-  .trip-widget.empty{
-    aspect-ratio:auto;padding:14px 18px;background:var(--surface);color:var(--muted);box-shadow:none;
+  .trip-widget.empty{aspect-ratio:auto;padding:22px 18px;}
+  .trip-widget.empty .trip-widget-main{font-size:24px;}
+
+  .home-tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .home-tile{
+    aspect-ratio:1/.92;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-start;
+    padding:16px;border:none;border-radius:24px;
+    background:linear-gradient(160deg, #1d1d21 0%, #121214 100%);color:#fff;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.06), 0 8px 20px rgba(0,0,0,.22);
+    font:inherit;text-align:left;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+    transition:transform .12s ease, filter .12s ease;
   }
-  .trip-widget.empty .trip-widget-main{font-size:20px;color:var(--ink);}
+  .home-tile:active{transform:scale(.96);filter:brightness(1.15);}
+  .home-tile-icon{
+    width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+    background:color-mix(in srgb, var(--tile-accent) 18%, transparent);
+  }
+  .home-tile-icon svg{width:21px;height:21px;stroke:var(--tile-accent);}
+  .home-tile-name{display:block;font-size:17px;font-weight:700;letter-spacing:-.01em;}
+  .home-tile-sub{display:block;margin-top:2px;font-size:12px;font-weight:500;color:#8e8e93;}
+  .home-tile[data-go="prices"]{--tile-accent:#e2c275;}
+  .home-tile[data-go="catalog"]{--tile-accent:#8fb3ff;}
+  .home-tile[data-go="clients"]{--tile-accent:#f1a7b9;}
+  .home-tile[data-go="trips"]{--tile-accent:#7fd69b;}
   @media (prefers-reduced-motion:reduce){
-    .trip-widget{transition:none;}
+    .trip-widget, .home-tile{transition:none;}
     .trip-widget-dot{animation:none;}
   }
+
+  /* The brand filter only filters the Catalog, so its button only shows there. Hidden rather
+     than removed, so the top bar keeps its height and nothing below jumps between tabs. */
+  body:not([data-tab="catalog"]) .menu-btn{visibility:hidden;}
 
   /* search dock — pinned above the tab bar, Uber "Where to?"-style, so it's reachable with
      a thumb without scrolling. Visibility is its own state (dock-open), independent of
@@ -1025,7 +1062,7 @@
   }
 </style>
 </head>
-<body class="dock-open" data-tab="prices">
+<body class="dock-open" data-tab="home">
 <div id="splashScreen" aria-hidden="true">
   <img id="splashLogo" src="data:image/png;base64,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" alt="">
 </div>
@@ -1043,10 +1080,32 @@
     <div id="filterList"></div>
   </div>
 
-  <main class="view active" id="pricesView">
-    <button type="button" class="text-link card-back-btn" id="cardBackBtn">← Back</button>
-    <div class="trip-widgets" id="tripWidgets" hidden></div>
+  <main class="view active" id="homeView">
     <h1>KICKBROS HUB</h1>
+    <div class="trip-widgets" id="tripWidgets" hidden></div>
+    <div class="home-tiles">
+      <button type="button" class="home-tile" data-go="prices">
+        <span class="home-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
+        <span><span class="home-tile-name">Prices</span><span class="home-tile-sub">Check a product</span></span>
+      </button>
+      <button type="button" class="home-tile" data-go="catalog">
+        <span class="home-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
+        <span><span class="home-tile-name">Catalog</span><span class="home-tile-sub">Stock &amp; sales</span></span>
+      </button>
+      <button type="button" class="home-tile" data-go="clients">
+        <span class="home-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+        <span><span class="home-tile-name">Clients</span><span class="home-tile-sub">People &amp; requests</span></span>
+      </button>
+      <button type="button" class="home-tile" data-go="trips">
+        <span class="home-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
+        <span><span class="home-tile-name">Trips</span><span class="home-tile-sub">Calendar &amp; costs</span></span>
+      </button>
+    </div>
+  </main>
+
+  <main class="view" id="pricesView">
+    <button type="button" class="text-link card-back-btn" id="cardBackBtn">← Back</button>
+    <h1>Prices</h1>
     <p class="sub">Drop in a designer product page and we'll work out what to charge after the détaxe refund.</p>
 
     <button class="list-row" id="manualToggle">
@@ -1669,7 +1728,11 @@
 </div>
 
 <nav class="tabbar">
-  <button class="tab-btn active" id="tabPrices" data-tab="prices">
+  <button class="tab-btn active" id="tabHome" data-tab="home">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>
+    <span>Home</span>
+  </button>
+  <button class="tab-btn" id="tabPrices" data-tab="prices">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
     <span>Prices</span>
   </button>
@@ -4369,7 +4432,7 @@
   el('requestLinkSearch').addEventListener('input', () => renderRequestLinkList(el('requestLinkSearch').value));
 
   // ---- tabs ----
-  const views = { prices: el('pricesView'), catalog: el('catalogView'), clients: el('clientsView'), trips: el('tripsView'), settings: el('settingsView') };
+  const views = { home: el('homeView'), prices: el('pricesView'), catalog: el('catalogView'), clients: el('clientsView'), trips: el('tripsView'), settings: el('settingsView') };
   const tabButtons = document.querySelectorAll('.tab-btn');
   function switchTab(name) {
     Object.keys(views).forEach(k => views[k].classList.toggle('active', k === name));
@@ -4389,9 +4452,10 @@
     if (name === 'catalog') renderCatalog();
     if (name === 'clients') renderClients();
     if (name === 'trips') renderTripsCalendar();
-    if (name === 'prices') renderTripWidget();
+    if (name === 'home') renderTripWidget();
   }
   tabButtons.forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+  document.querySelectorAll('.home-tile').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.go)));
 
   // ---- home trip widget ----
   // Trip dates are plain calendar dates, so "today" is taken in Europe/London rather than from a

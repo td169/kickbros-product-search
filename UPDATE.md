@@ -6,6 +6,17 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-11-11 (later) — A proper Home screen
+
+The app now opens on a new **Home** tab, first in the bottom bar (Home, Prices, Catalog, Clients,
+Trips, Settings). It has the KICKBROS HUB heading, your trip widget straight underneath, since
+it's the time-sensitive one, then four widgets, two per row: Prices, Catalog, Clients and Trips.
+Tap one to jump there. The trip widget is now dark: Paris at night, with a softly lit Eiffel
+Tower, and deep green while a trip is on. The Prices tab is now just called "Prices", and the ☰
+brand filter only shows on Catalog, the only place it does anything.
+
+---
+
 ## 2026-11-11 — Trip widget on the home screen, straight into a new trip
 
 ### Trip widget on the home screen

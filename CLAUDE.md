@@ -42,13 +42,20 @@ There is no build/lint/test tooling. To validate a change:
 ### Tab state lives on `<body data-tab="...">`, not just in JS
 
 `switchTab()` sets `document.body.dataset.tab`, and CSS keys off it — e.g. the docked search
-bar only shows via `body.dock-open[data-tab="prices"] .search-dock{display:block;}`. The
-`<body>` tag **must** carry `data-tab="prices"` in the static HTML itself (not only set at
-runtime), matching `id="tabPrices"` already having `class="tab-btn active"` in the markup —
-otherwise, on a completely fresh page load before any tab is ever clicked, the attribute is
-simply absent and the entire docked search input (the app's main entry point) is invisible.
-This exact regression shipped invisibly for a while because every manual/automated test
+bar only shows via `body.dock-open[data-tab="prices"] .search-dock{display:block;}`, and the
+brand-filter ☰ button only shows on Catalog via `body:not([data-tab="catalog"]) .menu-btn`. The
+`<body>` tag **must** carry the landing tab's `data-tab` in the static HTML itself (not only set
+at runtime) — now `data-tab="home"`, matching `id="tabHome"` having `class="tab-btn active"` and
+`#homeView` having `class="view active"` in the markup. Otherwise, on a completely fresh page
+load before any tab is ever clicked, the attribute is simply absent and every rule keyed off it
+silently misbehaves. This exact regression shipped invisibly for a while back when Prices was the
+landing tab (its docked search input just never appeared) because every manual/automated test
 happened to click some other tab first, incidentally setting the attribute as a side effect.
+
+Home (`#homeView`) is the landing tab and the first of six in the bottom bar (Home, Prices,
+Catalog, Clients, Trips, Settings). It holds the "KICKBROS HUB" heading, the trip widget, then
+four dark tiles 2 per row (`.home-tile`, `data-go` = the tab to open via `switchTab`). Prices
+keeps its own "Prices" heading and pitch copy.
 
 ### Two independent data-acquisition paths, chosen per brand
 
@@ -587,25 +594,26 @@ unrelated to what one customer happened to pay). Reopening an existing entry via
 overridden — so revisiting an item to fix its FR/UK RRP never silently nudges an
 already-recorded sale price.
 
-### Home trip widget (`#tripWidgets`, top of the Prices tab)
+### Home trip widget (`#tripWidgets`, top of the Home tab)
 
-Widgetsmith-style cards above the home screen's heading, built from the `trips` table's
-`start_date`/`end_date` (no schema of its own). Rules, all in `pickWidgetTrips`/`buildTripWidget`:
+Full-width cards right under the Home heading and above the section tiles, because they're
+time-sensitive. Dark "Paris at night" styling (midnight blue, a faint lit Eiffel Tower drawn as an
+inline SVG data URI in `--tower`, so no image request), deep green while a trip is on. Built from
+the `trips` table's `start_date`/`end_date` (no schema of its own). Rules, all in
+`pickWidgetTrips`/`buildTripWidget`:
 - Active trips (today within start–end, inclusive) come first in green with "ACTIVE TRIP", then
   upcoming ones ("Paris in 12 days", "Paris tomorrow"), capped at 2 cards. Past trips and trips
   without a `start_date` never show; a missing or earlier-than-start `end_date` means a one-day trip.
 - "Today" is the **Europe/London** calendar date (`londonToday`), compared as `YYYY-MM-DD` strings,
   never a UTC timestamp or the device's own zone, so a trip is active all day and the countdown
-  changes at London midnight. Recomputed on load, on switching back to Prices, and on
+  changes at London midnight. Recomputed on load, on switching back to Home, and on
   `visibilitychange` to visible (so it's right after midnight).
 - The place name comes from the label (`tripPlaceName`: "PARIS AUGUST 2026" → "Paris", dropping
   month/year/filler words, falling back to the whole label).
 - With nothing active or upcoming, a quiet "No trips planned" card opens Plan next trip. It reads
   `trips` itself rather than via `loadTripMeta`, which turns a failed read into `{}`: on a failed
   read, or with no Supabase set up, the widget stays hidden instead of claiming no trips.
-- Hidden under `body.result-active` like the heading, so a result card still fits on one screen.
-- Cards are `flex: 1 1 280px; max-width: 360px` in a wrapping row, which would sit side by side
-  on a wider layout, but `.app` caps the column at 460px, so in practice they always stack.
+- Each card spans the column (the width of two tiles, like an iOS medium widget) at 2:1, stacked.
 
 ### Known-SKU cache (`localStorage`, separate from the Catalog)
 
