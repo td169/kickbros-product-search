@@ -52,10 +52,12 @@ silently misbehaves. This exact regression shipped invisibly for a while back wh
 landing tab (its docked search input just never appeared) because every manual/automated test
 happened to click some other tab first, incidentally setting the attribute as a side effect.
 
-Home (`#homeView`) is the landing tab and the first of six in the bottom bar (Home, Prices,
-Catalog, Clients, Trips, Settings). It holds the "KICKBROS HUB" heading, the trip widget, then
-four dark tiles 2 per row (`.home-tile`, `data-go` = the tab to open via `switchTab`). Prices
-keeps its own "Prices" heading and pitch copy.
+Home (`#homeView`) is the landing tab and the first of five in the bottom bar (Home, Prices,
+Catalog, Clients, Trips). It holds the "KICKBROS HUB" heading, the trip widget, then dark tiles 2
+per row (`.home-tile`, `data-go` = the view to open via `switchTab`) and a full-width Settings
+strip. Settings has **no tab of its own**: it's still in the `views` map and `switchTab('settings')`
+still works (the "add your token" prompts use it), but `switchTab` highlights Home while it's open,
+and `#settingsBack` returns there. Prices keeps its own "Prices" heading and pitch copy.
 
 ### Two independent data-acquisition paths, chosen per brand
 
@@ -566,6 +568,13 @@ of whichever tab was actually selected. The reverse applies too: `openTripDetail
 trip from Plan next trip, and that screen used to stay up underneath. "Create trip" waits for its
 upsert and only navigates on success (an error `alert()`s and leaves the modal open), and Trip
 Detail re-reads the row rather than trusting the form, so it shows what was actually saved.
+
+Its layout (`.td-*` classes): a dark hero card in the Home widget's style (`renderTripDetailHero`:
+countdown/ACTIVE/PAST/NO DATES YET from the same London-date helpers, dates and nights, the raw
+label small in `#tripDetailTitle`), a net-profit card plus Items/Revenue/Profit tiles in
+`#tripDetailStats`, an iOS-style grouped list for the start/end/flight/hotel inputs (same ids and
+`change` handlers as before), then the products. Every money figure keeps `.trip-figure`, so the
+privacy blur (`body.hide-sensitive`) still covers them.
 From here you can add products two ways:
 - **"+ Paste a link"** reveals an inline URL input reusing `startCheckFromUrl()` — the same
   brand-detection/scrape logic as the main dock's checkBtn (factored out into that shared

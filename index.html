@@ -41,6 +41,8 @@
     --radius-sm:10px;
     --radius-pill:100px;
     --tabbar-h:54px;
+    /* Faint lit Eiffel Tower for the dark "Paris at night" trip cards (Home widget, Trip Detail hero). */
+    --tower:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 120'%3E%3Cpath fill='%23e8c88c' fill-opacity='.2' d='M30 0 31 10h1l.6 8h.9l2.5 28h3v3h-1.5l4.5 23h4v4h-2l10 42H42c-2-14-7-21-12-21s-10 7-12 21H6l10-42h-2v-4h4l4.5-23H21v-3h3l2.5-28h.9l.6-8h1z'/%3E%3C/svg%3E");
   }
   @media (prefers-color-scheme: dark){
     :root{
@@ -195,7 +197,6 @@
   .trip-widgets[hidden]{display:none;}
   /* Paris at night: a faint lit Eiffel Tower on midnight blue (green while the trip is on). */
   .trip-widget{
-    --tower:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 120'%3E%3Cpath fill='%23e8c88c' fill-opacity='.2' d='M30 0 31 10h1l.6 8h.9l2.5 28h3v3h-1.5l4.5 23h4v4h-2l10 42H42c-2-14-7-21-12-21s-10 7-12 21H6l10-42h-2v-4h4l4.5-23H21v-3h3l2.5-28h.9l.6-8h1z'/%3E%3C/svg%3E");
     width:100%;aspect-ratio:2/1;position:relative;overflow:hidden;
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
     padding:16px 18px;border:none;border-radius:26px;
@@ -257,6 +258,11 @@
   .home-tile[data-go="catalog"]{--tile-accent:#8fb3ff;}
   .home-tile[data-go="clients"]{--tile-accent:#f1a7b9;}
   .home-tile[data-go="trips"]{--tile-accent:#7fd69b;}
+  .home-tile[data-go="settings"]{--tile-accent:#b9b9c3;}
+  /* Five tiles don't split 2 per row, so Settings (the least-used) is a full-width strip. */
+  .home-tile.wide{grid-column:1/-1;aspect-ratio:auto;flex-direction:row;align-items:center;justify-content:flex-start;gap:14px;}
+  .home-tile.wide > span:nth-child(2){flex:1;}
+  .home-tile-chev{width:18px;height:18px;color:#6e6e73;}
   @media (prefers-reduced-motion:reduce){
     .trip-widget, .home-tile{transition:none;}
     .trip-widget-dot{animation:none;}
@@ -641,20 +647,10 @@
   .btn-delete-catalog:hover{background:var(--danger);color:#fff;}
   .empty-state{color:var(--muted);font-size:13.5px;text-align:center;padding:70px 24px;line-height:1.6;}
 
-  .trip-stats{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12.5px;color:var(--muted);padding:0 2px;}
-  .trip-stats b{color:var(--ink);font-weight:600;}
-  /* Not scoped to .trip-stats — buildCatalogRow() reuses these same classes for the profit
-     figure on ordinary catalog rows, outside of any .trip-stats container. */
+  /* Profit colouring, shared by Trip Detail's figures and buildCatalogRow()'s profit on every
+     catalog row, so it isn't scoped to either. */
   .trip-net-pos{color:var(--profit);font-weight:600;}
   .trip-net-neg{color:var(--danger);font-weight:600;}
-  .trip-flight-row{display:flex;align-items:center;gap:8px;padding:0 2px;}
-  .trip-flight-row label{font-size:11.5px;color:var(--muted-2);flex:none;}
-  .trip-flight-row input{
-    font:inherit;font-size:13px;width:90px;padding:5px 8px;border-radius:8px;
-    border:1px solid var(--line);background:var(--field-bg);color:var(--ink);
-  }
-  .trip-costs-row{display:flex;flex-wrap:wrap;gap:10px 18px;margin-bottom:2px;}
-  .trip-costs-row .trip-flight-row{padding:0;}
 
   /* trips calendar */
   .cal-header{display:flex;align-items:center;justify-content:center;gap:16px;margin:8px 0 14px;}
@@ -772,9 +768,115 @@
   .btn-danger:hover{opacity:.88;}
   .modal-list .catalog-search{margin-bottom:10px;}
 
-  /* trip detail */
-  .trip-add-actions{display:flex;gap:10px;margin:14px 0;}
-  .trip-add-actions .btn-pill{flex:1;}
+  /* trip detail — same "Paris at night" hero as the Home trip widget (shares --tower), then a
+     net-profit card, stat tiles, an iOS-style grouped list for dates/costs, and the products. */
+  .td-back{
+    display:inline-flex;align-items:center;gap:2px;margin:4px 0 12px -6px;padding:6px 10px 6px 4px;
+    border:none;border-radius:var(--radius-pill);background:none;color:var(--ink);
+    font:inherit;font-size:15px;font-weight:600;cursor:pointer;
+  }
+  .td-back:hover{background:var(--surface);}
+  .td-back svg{width:20px;height:20px;}
+  .td-hero{
+    position:relative;overflow:hidden;min-height:200px;
+    display:flex;flex-direction:column;justify-content:flex-end;gap:6px;
+    padding:22px 22px 20px;border-radius:28px;
+    background:
+      var(--tower) no-repeat right 6% bottom -2px / auto 86%,
+      radial-gradient(circle at 84% 80%, rgba(232,200,140,.22), transparent 55%),
+      linear-gradient(165deg, #1e2b55 0%, #121b3a 48%, #0a0f22 100%);
+    color:#f3e9da;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.06), 0 14px 30px rgba(0,0,0,.28);
+  }
+  .td-hero.active{
+    background:
+      var(--tower) no-repeat right 6% bottom -2px / auto 86%,
+      radial-gradient(circle at 84% 80%, rgba(232,200,140,.18), transparent 55%),
+      linear-gradient(165deg, #22543b 0%, #143524 48%, #0a1d13 100%);
+    color:#eef6ec;
+  }
+  .td-hero.past{
+    background:
+      var(--tower) no-repeat right 6% bottom -2px / auto 86%,
+      linear-gradient(165deg, #2a2a30 0%, #19191d 55%, #101012 100%);
+    color:#e8e4df;
+  }
+  .td-hero-status{
+    position:absolute;top:20px;left:22px;
+    display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--radius-pill);
+    background:rgba(255,255,255,.10);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    font-size:10.5px;font-weight:700;letter-spacing:.12em;
+  }
+  .td-hero.active .td-hero-status{color:#a9e2b8;}
+  .td-hero-status .trip-widget-dot{width:6px;height:6px;}
+  .td-hero-main{
+    font-family:'DM Serif Display',Georgia,serif;font-weight:700;font-synthesis:none;
+    font-size:clamp(34px, 11vw, 46px);line-height:1;letter-spacing:-.01em;max-width:80%;
+  }
+  .td-hero-dates{font-size:14px;font-weight:500;opacity:.75;}
+  .td-hero-label{
+    margin:6px 0 0;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;opacity:.5;
+  }
+
+  .td-stats{display:grid;grid-template-columns:repeat(3, 1fr);gap:10px;margin:14px 0 4px;}
+  .td-stat{background:var(--surface);border-radius:18px;padding:12px 14px;min-width:0;}
+  .td-stat-label{display:block;font-size:11.5px;font-weight:600;color:var(--muted);}
+  .td-stat-value{display:block;margin-top:4px;font-size:17px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .td-stat.net{grid-column:1/-1;padding:16px 18px;}
+  .td-stat.net .td-stat-value{font-size:32px;font-weight:800;letter-spacing:-.02em;}
+  .td-stat-note{display:block;margin-top:4px;font-size:12px;color:var(--muted);}
+  .td-stat-value small{font-size:12px;font-weight:600;color:var(--muted);}
+
+  .td-section-title{
+    display:flex;align-items:center;gap:8px;margin:22px 2px 10px;
+    font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  }
+  .td-count{
+    padding:1px 8px;border-radius:var(--radius-pill);background:var(--surface);
+    font-size:11.5px;letter-spacing:0;color:var(--ink);
+  }
+  .td-count:empty{display:none;}
+  .td-group{background:var(--surface);border-radius:18px;overflow:hidden;}
+  .td-row{display:flex;align-items:center;gap:12px;padding:10px 14px;min-height:54px;cursor:text;}
+  .td-row + .td-row{border-top:1px solid var(--line);}
+  .td-row-icon{
+    width:32px;height:32px;flex:none;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    background:color-mix(in srgb, var(--td-accent) 20%, transparent);
+  }
+  .td-row-icon svg{width:17px;height:17px;stroke:var(--td-accent);}
+  .td-row-label{flex:1;font-size:15px;font-weight:600;}
+  .td-row input{
+    font:inherit;font-size:15px;font-weight:500;text-align:right;color:var(--ink);
+    background:none;border:none;padding:6px 0;min-width:0;
+  }
+  .td-row input:focus{outline:none;}
+  .td-row input[type="date"]{width:140px;color-scheme:light dark;}
+  .td-money{display:flex;align-items:center;gap:1px;color:var(--muted);font-size:15px;font-weight:500;}
+  /* Width follows the typed amount (fitMoneyInput), so the £ sits right next to the number. */
+  .td-money input{width:5ch;max-width:110px;-moz-appearance:textfield;appearance:textfield;}
+  .td-money input::-webkit-outer-spin-button,
+  .td-money input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+  .td-row:focus-within{background:var(--surface-2);}
+
+  .td-add{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+  .td-add-btn{
+    height:48px;display:flex;align-items:center;justify-content:center;gap:8px;
+    border:none;border-radius:16px;background:var(--surface);color:var(--ink);
+    font:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:transform .12s ease, background .15s;
+  }
+  .td-add-btn svg{width:17px;height:17px;}
+  .td-add-btn.primary{background:var(--ink);color:var(--on-ink);}
+  .td-add-btn:active{transform:scale(.97);}
+  .td-list{background:var(--surface);border-radius:18px;padding:2px 14px;}
+  .td-list:empty{display:none;}
+  .td-empty{
+    display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;
+    padding:34px 24px;border:1.5px dashed var(--line);border-radius:18px;color:var(--muted);
+  }
+  .td-empty svg{width:30px;height:30px;margin-bottom:4px;opacity:.7;}
+  .td-empty b{color:var(--ink);font-size:15px;}
+  .td-empty span{font-size:13px;line-height:1.5;max-width:30ch;}
+
   .trip-link-dock{display:flex;gap:8px;margin-bottom:14px;}
   .trip-link-dock input{
     flex:1;font:inherit;font-size:14px;padding:10px 12px;border-radius:var(--radius-sm);
@@ -1099,6 +1201,11 @@
       <button type="button" class="home-tile" data-go="trips">
         <span class="home-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
         <span><span class="home-tile-name">Trips</span><span class="home-tile-sub">Calendar &amp; costs</span></span>
+      </button>
+      <button type="button" class="home-tile wide" data-go="settings">
+        <span class="home-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+        <span><span class="home-tile-name">Settings</span><span class="home-tile-sub">Tokens, database &amp; pricing</span></span>
+        <svg class="home-tile-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
       </button>
     </div>
   </main>
@@ -1474,43 +1581,66 @@
   </main>
 
   <main class="view" id="tripDetailView">
-    <div class="view-header">
-      <button class="text-link" id="tripDetailBack">← Trips</button>
-    </div>
-    <h1 id="tripDetailTitle">—</h1>
-    <div class="trip-stats" id="tripDetailStats"></div>
-    <div class="trip-costs-row">
-      <div class="trip-flight-row">
-        <label>Start</label>
+    <button type="button" class="td-back" id="tripDetailBack">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      Trips
+    </button>
+
+    <section class="td-hero" id="tripDetailHero">
+      <div class="td-hero-status" id="tripDetailStatus"></div>
+      <div class="td-hero-main" id="tripDetailHeadline">—</div>
+      <div class="td-hero-dates" id="tripDetailDates"></div>
+      <h1 class="td-hero-label" id="tripDetailTitle">—</h1>
+    </section>
+
+    <div class="td-stats" id="tripDetailStats"></div>
+
+    <h2 class="td-section-title">Trip details</h2>
+    <div class="td-group">
+      <label class="td-row" for="tripDetailStart">
+        <span class="td-row-icon" style="--td-accent:#7fd69b"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+        <span class="td-row-label">Start</span>
         <input type="date" id="tripDetailStart">
-      </div>
-      <div class="trip-flight-row">
-        <label>End</label>
+      </label>
+      <label class="td-row" for="tripDetailEnd">
+        <span class="td-row-icon" style="--td-accent:#7fd69b"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="9 15 11 17 15 13"/></svg></span>
+        <span class="td-row-label">End</span>
         <input type="date" id="tripDetailEnd">
-      </div>
-    </div>
-    <div class="trip-costs-row">
-      <div class="trip-flight-row">
-        <label>Flight £</label>
-        <input type="number" id="tripDetailFlight" step="0.01" min="0" placeholder="0.00">
-      </div>
-      <div class="trip-flight-row">
-        <label>Hotel £</label>
-        <input type="number" id="tripDetailHotel" step="0.01" min="0" placeholder="0.00">
-      </div>
+      </label>
+      <label class="td-row" for="tripDetailFlight">
+        <span class="td-row-icon" style="--td-accent:#8fb3ff"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></span>
+        <span class="td-row-label">Flight</span>
+        <span class="td-money"><span>£</span><input type="number" inputmode="decimal" id="tripDetailFlight" step="0.01" min="0" placeholder="0.00"></span>
+      </label>
+      <label class="td-row" for="tripDetailHotel">
+        <span class="td-row-icon" style="--td-accent:#e2c275"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20V8"/><path d="M2 12h20v8"/><path d="M2 17h20"/><path d="M6 12V9a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3"/></svg></span>
+        <span class="td-row-label">Hotel</span>
+        <span class="td-money"><span>£</span><input type="number" inputmode="decimal" id="tripDetailHotel" step="0.01" min="0" placeholder="0.00"></span>
+      </label>
     </div>
 
-    <div class="trip-add-actions">
-      <button type="button" class="btn-pill" id="tripAddLinkBtn">+ Paste a link</button>
-      <button type="button" class="btn-pill" id="tripAddCatalogBtn">+ From catalog</button>
+    <h2 class="td-section-title">Products <span class="td-count" id="tripDetailCount"></span></h2>
+    <div class="td-add">
+      <button type="button" class="td-add-btn primary" id="tripAddLinkBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        Paste a link
+      </button>
+      <button type="button" class="td-add-btn" id="tripAddCatalogBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        From catalog
+      </button>
     </div>
     <div class="trip-link-dock" id="tripLinkDock" style="display:none;">
       <input type="text" id="tripLinkInput" placeholder="Paste a product link…">
-      <button type="button" id="tripLinkGoBtn">→</button>
+      <button type="button" id="tripLinkGoBtn" aria-label="Check this link">→</button>
     </div>
 
-    <div class="catalog-list" id="tripDetailList"></div>
-    <p class="empty-state" id="tripDetailEmpty">No products in this trip yet.</p>
+    <div class="catalog-list td-list" id="tripDetailList"></div>
+    <div class="td-empty" id="tripDetailEmpty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+      <b>No products yet</b>
+      <span>Paste a link or pick from your catalog to start this trip's list.</span>
+    </div>
   </main>
 
   <main class="view" id="planTripView">
@@ -1662,6 +1792,10 @@
   </div>
 
   <main class="view" id="settingsView">
+    <button type="button" class="td-back" id="settingsBack">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      Home
+    </button>
     <div class="view-header"><h1>Settings</h1></div>
     <div class="settings-view">
       <h3>Catalog (Supabase)</h3>
@@ -1747,10 +1881,6 @@
   <button class="tab-btn" id="tabTrips" data-tab="trips">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
     <span>Trips</span>
-  </button>
-  <button class="tab-btn" id="tabSettings" data-tab="settings">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-    <span>Settings</span>
   </button>
 </nav>
 
@@ -2689,6 +2819,37 @@
     renderTripDetail(label);
   }
 
+  // The hero mirrors the Home trip widget: green while the trip is on, a countdown before it,
+  // muted once it's over. Same London calendar date as the widget.
+  function renderTripDetailHero(label, start, end) {
+    const hero = el('tripDetailHero');
+    const place = tripPlaceName(label);
+    const today = londonToday();
+    start = asDateStr(start);
+    end = asDateStr(end);
+    if (start && (!end || end < start)) end = start;
+    let state = 'upcoming', status = '', headline = place;
+    if (!start) status = 'NO DATES YET';
+    else if (start <= today && today <= end) { state = 'active'; status = '<span class="trip-widget-dot"></span>ACTIVE TRIP'; headline = place + ' – today'; }
+    else if (end < today) { state = 'past'; status = 'PAST TRIP'; }
+    else {
+      const days = daysBetween(today, start);
+      status = days === 1 ? 'TOMORROW' : 'IN ' + days + ' DAYS';
+      headline = days === 1 ? place + ' tomorrow' : place + ' in ' + days + ' days';
+    }
+    hero.className = 'td-hero' + (state === 'upcoming' ? '' : ' ' + state);
+    el('tripDetailStatus').innerHTML = status;
+    el('tripDetailHeadline').textContent = headline;
+    let dates = '';
+    if (start) {
+      const nights = daysBetween(start, end);
+      dates = fmtShortDate(start) + (end !== start ? ' – ' + fmtShortDate(end) : '') +
+        (nights ? ' · ' + nights + (nights === 1 ? ' night' : ' nights') : '');
+    }
+    el('tripDetailDates').textContent = dates || 'Add the dates below';
+    el('tripDetailTitle').textContent = label;
+  }
+
   async function renderTripDetail(label) {
     currentTripDetailLabel = label;
     el('tripDetailTitle').textContent = label;
@@ -2706,13 +2867,23 @@
     const hotelCost = (meta[label] && meta[label].hotel_cost) || 0;
     el('tripDetailFlight').value = flightCost || '';
     el('tripDetailHotel').value = hotelCost || '';
+    fitMoneyInput(el('tripDetailFlight'));
+    fitMoneyInput(el('tripDetailHotel'));
     el('tripDetailStart').value = (meta[label] && meta[label].start_date) || '';
     el('tripDetailEnd').value = (meta[label] && meta[label].end_date) || '';
+    renderTripDetailHero(label, meta[label] && meta[label].start_date, meta[label] && meta[label].end_date);
     const net = profit - flightCost - hotelCost;
+    // The small tiles show whole pounds so a four-figure revenue still fits a third of the width.
+    const wholeGBP = n => (n < 0 ? '−' : '') + '£' + Math.round(Math.abs(n)).toLocaleString('en-GB');
+    const stat = (cls, name, value, note) => '<div class="td-stat ' + cls + '"><span class="td-stat-label">' + name +
+      '</span><span class="td-stat-value">' + value + '</span>' + (note ? '<span class="td-stat-note">' + note + '</span>' : '') + '</div>';
     el('tripDetailStats').innerHTML =
-      items.length + (items.length === 1 ? ' item' : ' items') +
-      ' · Revenue <b class="trip-figure">' + fmtGBP(revenue) + '</b> · Profit <b class="trip-figure">' + fmtGBP(profit) + '</b> · ' +
-      'Net profit <b class="trip-figure ' + (net >= 0 ? 'trip-net-pos' : 'trip-net-neg') + '">' + fmtGBP(net) + '</b>';
+      stat('net', 'Net profit', '<span class="trip-figure ' + (net >= 0 ? 'trip-net-pos' : 'trip-net-neg') + '">' + (net < 0 ? '−' : '') + fmtGBP(Math.abs(net)) + '</span>',
+        'Profit minus <span class="trip-figure">' + fmtGBP(flightCost + hotelCost) + '</span> flight and hotel') +
+      stat('', 'Items', items.length + (sold.length ? ' <small>· ' + sold.length + ' sold</small>' : '')) +
+      stat('', 'Revenue', '<span class="trip-figure">' + wholeGBP(revenue) + '</span>') +
+      stat('', 'Profit', '<span class="trip-figure">' + wholeGBP(profit) + '</span>');
+    el('tripDetailCount').textContent = items.length || '';
 
     renderTripDetailList(items);
   }
@@ -2721,12 +2892,16 @@
     const wrap = el('tripDetailList');
     const empty = el('tripDetailEmpty');
     wrap.innerHTML = '';
-    if (!items.length) { empty.style.display = 'block'; return; }
+    if (!items.length) { empty.style.display = 'flex'; return; }
     empty.style.display = 'none';
     items.forEach(entry => wrap.appendChild(buildCatalogRow(entry, e => openProductDetail(e))));
   }
 
   el('tripDetailBack').addEventListener('click', () => switchTab('trips'));
+  function fitMoneyInput(input) {
+    input.style.width = Math.max(4, (input.value || input.placeholder).length + 1) + 'ch';
+  }
+  ['tripDetailFlight', 'tripDetailHotel'].forEach(id => el(id).addEventListener('input', () => fitMoneyInput(el(id))));
 
   const TRIP_DETAIL_FIELD_MAP = {
     tripDetailFlight: 'flight_cost', tripDetailHotel: 'hotel_cost',
@@ -4439,7 +4614,9 @@
     el('tripDetailView').classList.remove('active');
     el('planTripView').classList.remove('active');
     el('clientDetailView').classList.remove('active');
-    tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    // Settings has no tab of its own (it's a tile on Home), so Home stays highlighted there.
+    const tabName = name === 'settings' ? 'home' : name;
+    tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === tabName));
     document.body.dataset.tab = name;
     filterPanel.classList.remove('open');
     // Leaving Prices ends any in-progress "add a product to this trip" context — the Add-to-trip
@@ -4456,6 +4633,7 @@
   }
   tabButtons.forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
   document.querySelectorAll('.home-tile').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.go)));
+  el('settingsBack').addEventListener('click', () => switchTab('home'));
 
   // ---- home trip widget ----
   // Trip dates are plain calendar dates, so "today" is taken in Europe/London rather than from a

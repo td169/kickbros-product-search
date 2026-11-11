@@ -6,6 +6,23 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-11-11 (evening) — A much better trip page, Settings moves to Home
+
+### Trip page redesign
+
+Opening a trip (from the Home widget or the Trips tab) now leads with the same dark Paris-at-night
+card as the widget: "Paris in 9 days" (or ACTIVE TRIP in green, or PAST TRIP), the dates and how
+many nights. Under it, your net profit in big figures, then items, revenue and profit. The dates
+and flight/hotel costs sit in a tidy list you tap to edit, and the products have their own section
+with "Paste a link" and "From catalog" buttons.
+
+### Settings is a Home widget now
+
+Settings is gone from the bottom bar, which is now Home, Prices, Catalog, Clients and Trips. Open
+it from the full-width Settings widget at the bottom of Home, and "‹ Home" takes you back.
+
+---
+
 ## 2026-11-11 (later) — A proper Home screen
 
 The app now opens on a new **Home** tab, first in the bottom bar (Home, Prices, Catalog, Clients,
