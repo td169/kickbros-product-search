@@ -1885,6 +1885,7 @@
       <div class="field">
         <label>Serper API token <span class="hint">optional</span></label>
         <input type="password" id="setSerperToken" placeholder="serper key…" autocomplete="off">
+        <div class="settings-note"><button type="button" id="copySearchLog">Copy what Google returned</button> <span id="copySearchLogNote">for the last product checked, to send when a price comes back wrong or blank</span></div>
       </div>
       <div class="field">
         <label>GitHub token <span class="hint">required for "Update now" on Plan next trip — fine-grained PAT, "Actions: read &amp; write" on this repo only</span></label>
@@ -2192,6 +2193,14 @@
       else localStorage.removeItem(key);
       initSupabaseClient();
     });
+  });
+
+  el('copySearchLog').addEventListener('click', async () => {
+    const note = el('copySearchLogNote');
+    if (!serperLog.length) { note.textContent = 'nothing searched yet, check a product first'; return; }
+    const text = JSON.stringify(serperLog, null, 1);
+    try { await navigator.clipboard.writeText(text); note.textContent = 'copied (' + serperLog.length + ' searches), paste it to Claude'; }
+    catch (e) { console.log(text); note.textContent = 'couldn’t copy here, it’s in the browser console'; }
   });
 
   el('forgetToken').addEventListener('click', () => {
@@ -5160,13 +5169,15 @@
   // listing at all, only resellers) — that's the intended outcome, not a bug: no verified
   // listing means no price, never a reseller's possibly-different price passed off as one.
   async function serperShoppingLookup(query, token, isFr, brandLabel) {
+    const body = JSON.stringify({ q: query, num: 10, gl: isFr ? 'fr' : 'gb', hl: isFr ? 'fr' : 'en' });
     const res = await fetch('https://google.serper.dev/shopping', {
       method: 'POST',
       headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ q: query, num: 10, gl: isFr ? 'fr' : 'gb', hl: isFr ? 'fr' : 'en' })
+      body
     });
-    if (!res.ok) return null;
+    if (!res.ok) { logSerper('shopping', body, null); return null; }
     const data = await res.json();
+    logSerper('shopping', body, data);
     const items = (data && data.shopping) || [];
     if (!items.length) return null;
     const wanted = normalizeBrandName(brandLabel);
@@ -5182,24 +5193,33 @@
   // looking up its price run the same "fr.loropiana <id>" search, and each one is paid for.
   const serperCache = new Map();
   const SERPER_CACHE_MS = 5 * 60 * 1000;
-  async function serperSearch(query, token, isFr, num) {
-    const body = JSON.stringify({ q: query, num, gl: isFr ? 'fr' : 'gb', hl: isFr ? 'fr' : 'en' });
+  // Every search for the product being checked and exactly what came back, for Settings' "Copy
+  // what Google returned". A price Google plainly shows the user came back blank twice for
+  // Chanel with no way to see why; this shows what the app actually got, never the token.
+  const serperLog = [];
+  function logSerper(kind, body, data) {
+    const req = JSON.parse(body);
+    serperLog.push({ kind, q: req.q, gl: req.gl, hl: req.hl, results: data ? (data.organic || data.shopping || []) : 'request failed' });
+  }
+  async function serperSearch(query, token, isFr, num, english) {
+    const body = JSON.stringify({ q: query, num, gl: isFr && !english ? 'fr' : 'gb', hl: isFr && !english ? 'fr' : 'en' });
     const hit = serperCache.get(body);
-    if (hit && Date.now() - hit.at < SERPER_CACHE_MS) return hit.data;
+    if (hit && Date.now() - hit.at < SERPER_CACHE_MS) { logSerper('search (reused)', body, hit.data); return hit.data; }
     const res = await fetch('https://google.serper.dev/search', {
       method: 'POST',
       headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
       body
     });
-    if (!res.ok) return null;
+    if (!res.ok) { logSerper('search', body, null); return null; }
     const data = await res.json();
+    logSerper('search', body, data);
     serperCache.set(body, { at: Date.now(), data });
     return data;
   }
 
   // Runs one Google organic search via Serper and returns the raw `organic` array.
-  async function serperOrganicSearch(query, token, isFr, num) {
-    const data = await serperSearch(query, token, isFr, num);
+  async function serperOrganicSearch(query, token, isFr, num, english) {
+    const data = await serperSearch(query, token, isFr, num, english);
     return (data && data.organic) || [];
   }
 
@@ -5436,6 +5456,15 @@
     // homepage's marketing title matched some unrelated Dior product on Shopping). No confirmed
     // product page and no price found from organic search is the tolerated "couldn't find it"
     // outcome, not something to paper over with a guess.
+    // The French price still missing: search the link the way the user does, on English Google.
+    // They see it as the first result there, with the price (Chanel, "14 000 €" and
+    // "€14,000.00"), while the French-Google search (gl/hl fr) came back without it. Still only
+    // from a page with this product's id in its link.
+    if (isFr && missing()) {
+      const pe = pickCandidates(await serperOrganicSearch(url, token, true, 10, true).catch(() => []));
+      if (pe.productPage) eurPrice = extractFromText(pe.productPage).eurPrice;
+    }
+
     if (missing() && (isConfirmedProductPage || !top)) {
       // Same "+ France" addition as the organic retry above, only when querying by a real
       // confirmed title — appending it to the raw URL fallback (when nothing was ever
@@ -5906,6 +5935,7 @@
   // a raw URL string in and let brand detection/scraping take it from there.
   async function startCheckFromUrl(raw) {
     if (!raw) return;
+    serperLog.length = 0;
     let url;
     try { url = new URL(raw); } catch(e) { setStatus('Not a valid URL.', true); return; }
     const brandKey = Object.keys(BRANDS).find(k => BRANDS[k].test(url.hostname));
@@ -5974,6 +6004,7 @@
   manualCheckBtn.addEventListener('click', () => {
     const uk = manualUk.value.trim(), fr = manualFr.value.trim();
     if (!uk || !fr) { setStatus('Add both a UK and FR link first.', true); return; }
+    serperLog.length = 0;
     let brandLabel = 'Manual entry', scrapeBlocked = false, brandKey = null;
     try { const h = new URL(uk).hostname; const bk = Object.keys(BRANDS).find(k => BRANDS[k].test(h)); if (bk) { brandLabel = BRANDS[bk].name; scrapeBlocked = !!BRANDS[bk].scrapeBlocked; brandKey = bk; } } catch(e){}
     if (scrapeBlocked) showManualMode(uk, fr, brandLabel, brandKey, brandKey === 'lv' ? guessLvName(uk) : null);

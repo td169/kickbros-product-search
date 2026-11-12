@@ -388,6 +388,18 @@ currency (`missing()`). Chanel, Gucci, Dior and Prada keep both countries on one
 id, so the UK page passed every check for the FR lookup; its £ counted as found, the code retry and
 Shopping were skipped, and FR came back blank.
 
+If the € price is still missing after the code retry, `serperLookup` searches the FR link again
+on English Google (`serperSearch(..., english = true)` → `gl: gb, hl: en`) before Shopping. That
+is the search the user does: they saw Chanel's 11.12 bag as the first result there with
+"14 000 €", while the app's `gl: fr` searches came back without it. Only a code-matched page's
+price is taken.
+
+**Debugging a wrong/blank price: ask the user for Settings → "Copy what Google returned".**
+`serperLog` records every `/search` and `/shopping` call (query, gl/hl, raw results, reused cache
+hits too, never the token) since the last check started (`startCheckFromUrl` / `manualCheckBtn`
+clear it). Two rounds of Chanel fixes were guesses because nobody could see Serper's actual
+response; read the log before changing lookup logic again.
+
 ### Pricing engine (`recalc`)
 
 FR price → cost after détaxe refund → sale price at target margin → **capped by `SAVE_CAPS`**, a

@@ -6,6 +6,20 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-11-12 — FR price: search the way you do, and a log to see what Google sent
+
+The Chanel 11.12 bag still came back blank even though googling its link shows "14 000 €" as the
+very first result. The app's price reading handles that text fine, so the difference is the search
+itself: the app searched French Google, you search English Google. Now, if the French price is
+still missing after everything else, it also searches the link on English Google, exactly like you
+do (still only trusting the page with that product's id in its link).
+
+If a price ever comes back wrong or blank again: Settings → **Copy what Google returned** (under
+the Serper token) and paste it to Claude. It's every search the app ran for the last product you
+checked and exactly what came back, so the cause can be seen instead of guessed.
+
+---
+
 ## 2026-11-11 — Chanel FR price: reading what Google actually shows
 
 Googling a Chanel link shows its French price straight away, but the app came back blank. Three
