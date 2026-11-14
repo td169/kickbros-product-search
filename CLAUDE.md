@@ -523,9 +523,9 @@ client. Everything is in the `sc*` functions next to the pricing calc.
   `null` does the sheet ask "What did you charge?", pre-filled by `scSuggestedPrice` (same
   refund/margin/`SAVE_CAPS` rules as `recalc()`), and it writes `{ sale_price }` back (plus
   `profit`/`total_profit` when `uk_after_tax` is on the row, so the row's profit doesn't go stale).
-- **The card's "KickBros price" only ends in .00 or .99** (user instruction): `scCardPrice` takes
-  the nearest such amount to `sale_price` (810.50 → £810.99, 810.30 → £810). Display only, the row
-  isn't changed.
+- **The card's "KickBros price" is whole pounds only** (user instruction, which replaced an earlier
+  ".00 or .99" rule — no .99 prices): `scCardPrice` rounds `sale_price` to the nearest pound
+  (810.50 → £811, 810.30 → £810). Display only, the row isn't changed.
 - **Saved = `uk_retail` − that shown price, per item** (quantity is ignored), so the card adds up. No UK price, or a saving
   of zero or less, shows a message and builds nothing; the ask pane refuses a price at or above RRP
   without saving it. The card never mentions VAT or détaxe.

@@ -6,10 +6,10 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
-## 2026-11-14 (later) — Savings card: tidy KickBros price
+## 2026-11-14 (later) — Savings card: KickBros price in whole pounds
 
-The KickBros price on the card now only ends in .00 or .99 (e.g. £810 or £809.99, never £810.50).
-It uses whichever is closest to the price you charged, and "Saved" is worked out from that shown
+The KickBros price on the card is now always whole pounds (e.g. £810, never £810.50 or £809.99).
+It's the price you charged rounded to the nearest pound, and "Saved" is worked out from that shown
 price so the numbers on the card add up. The price saved on the product itself doesn't change.
 
 ---
