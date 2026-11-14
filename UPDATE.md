@@ -6,6 +6,14 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-11-14 (later) — Savings card: tidy KickBros price
+
+The KickBros price on the card now only ends in .00 or .99 (e.g. £810 or £809.99, never £810.50).
+It uses whichever is closest to the price you charged, and "Saved" is worked out from that shown
+price so the numbers on the card add up. The price saved on the product itself doesn't change.
+
+---
+
 ## 2026-11-14 — Savings card to send to clients
 
 Every product in the Catalog (and in a trip, and in a client's purchases) now has a small download

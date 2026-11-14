@@ -4982,6 +4982,15 @@
     const v = Math.round(Number(n) * 100) / 100;
     return '£' + v.toLocaleString('en-GB', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 });
   }
+  // The card's "KickBros price" only ever ends in .00 or .99 (shown as £810 or £809.99): the
+  // nearest of those to the real sale price. Card only, the stored sale_price is untouched, and
+  // "Saved" is worked out from this shown price so the card's own sum adds up.
+  function scCardPrice(p) {
+    const c = Math.round(p * 100), base = Math.floor(c / 100) * 100;
+    const best = [base - 1, base, base + 99, base + 100]
+      .reduce((a, b) => (Math.abs(b - c) < Math.abs(a - c) ? b : a));
+    return best / 100;
+  }
   function scSlug(name) {
     const s = String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
       .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
@@ -5332,7 +5341,7 @@
 
   async function scGenerate(entry, notes) {
     const run = ++saveCardRun;
-    const rrp = Number(entry.uk_retail), charged = Number(entry.sale_price);
+    const rrp = Number(entry.uk_retail), charged = scCardPrice(Number(entry.sale_price));
     const saved = Math.round((rrp - charged) * 100) / 100;
     if (!(saved > 0)) {
       scShowMsg('The price charged (' + scMoney(charged) + ') isn’t below the UK RRP (' + scMoney(rrp) +
