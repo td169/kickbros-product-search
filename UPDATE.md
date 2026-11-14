@@ -6,6 +6,25 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-11-14 — Savings card to send to clients
+
+Every product in the Catalog (and in a trip, and in a client's purchases) now has a small download
+button on the right. Tap it and the app builds a phone-size picture (1080 x 1920 JPG) showing the
+product photo, its name, the UK RRP crossed out, the KickBros price, and "Saved £…" in big green
+with the percentage off. The background takes its colour from the product photo, with the KB logo
+as a faint pattern, and the logo sits at the bottom of the card.
+
+- **The price charged** is the sale price already saved on the product. If there isn't one, it
+  asks "What did you charge?" once (filled in with the app's suggested price) and remembers it.
+- **No saving, no card.** If the price charged isn't below the UK RRP, or there's no UK price, it
+  tells you instead of making a card.
+- **On your phone**, Download JPG opens the share sheet, so you can tap Save Image and it goes to
+  Photos. On a computer it downloads the file.
+- If a product's photo can't be loaded, the card still gets made with a KB placeholder and a note
+  tells you.
+
+---
+
 ## 2026-11-12 — FR price: search the way you do, and a log to see what Google sent
 
 The Chanel 11.12 bag still came back blank even though googling its link shows "14 000 €" as the

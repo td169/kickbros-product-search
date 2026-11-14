@@ -510,6 +510,48 @@ the same spot is "Remove from trip" (`trip_label: null`, no confirm since "From 
 back, and nothing is touched on screen if the write fails: `updateCatalogEntry` now returns
 whether it succeeded). From a client's purchases or requests it shows neither.
 
+### Savings card (download button on product rows)
+
+`buildCatalogRow(entry, onOpen, opts)` adds a download button (`.catalog-dl`) when
+`opts.download` is set: Catalog, Trip Detail and a client's purchases pass it, the two pickers
+don't. It's a sibling of `.catalog-open`, never nested in it, so tapping it can't open the
+product modal. It calls `startSaveCard(entry)`, which drives `#saveCardOverlay` (one sheet, four
+panes: ask price, loading, message, preview) and builds a 1080x1920 JPG "savings proof" for the
+client. Everything is in the `sc*` functions next to the pricing calc.
+
+- **No new column.** "What we charged" is the row's existing `sale_price`. Only when that's
+  `null` does the sheet ask "What did you charge?", pre-filled by `scSuggestedPrice` (same
+  refund/margin/`SAVE_CAPS` rules as `recalc()`), and it writes `{ sale_price }` back (plus
+  `profit`/`total_profit` when `uk_after_tax` is on the row, so the row's profit doesn't go stale).
+- **Saved = `uk_retail` − `sale_price`, per item** (quantity is ignored). No UK price, or a saving
+  of zero or less, shows a message and builds nothing; the ask pane refuses a price at or above RRP
+  without saving it. The card never mentions VAT or détaxe.
+- **Drawn by hand on a `<canvas>` (`scDraw`), not a DOM screenshot.** The card's height follows its
+  contents (name is 1 to 3 lines, `scWrapText` adds the "…") and it's centred vertically; three
+  lines still fit inside 1920. Fonts are Inter (already loaded by the page); `document.fonts.load`
+  for each weight used plus `fonts.ready` are awaited first, or the first card of a session is
+  drawn in a fallback font.
+- **A photo without CORS headers taints the canvas and `toBlob()` throws.** `scLoadProductImage`
+  loads with `crossOrigin = "anonymous"`, checks it can really be read back (`scReadable`, on a
+  throwaway 1px canvas), and otherwise retries through `https://images.weserv.nl/?url=`. Confirmed
+  live that a no-CORS image fails the first step and comes back usable through the proxy. Don't add
+  `output=jpg` to the proxy URL: it flattens transparent PNGs onto black (seen in testing). If both
+  fail, the card uses a placeholder tile and the preview says so. **Playwright's `route.fulfill`
+  adds CORS headers by itself**, so a stubbed image can't test this path; use a real URL.
+- **Background colour** is the photo's dominant hue (`scDominantColor`: 24 hue bins over a 48px
+  copy, skipping near-white, near-black and grey pixels, since most product shots are mostly white),
+  at a fixed lightness so it's never too bright. A photo with nothing colourful in it (black bag
+  on white), or no photo, falls back to the brand blue (`SC_FALLBACK_HUE`).
+- **The logo** is the page's already-embedded `#splashLogo` data URI (`logo-WHITE-cropped.png`),
+  not the file: a data URI is always canvas-safe, while a relative file isn't when the app runs
+  from `file://`. `scWhiteLogo` forces it to pure white. If the splash markup is ever removed, the
+  card falls back to a "KICKBROS" text wordmark.
+- **Download** uses `navigator.share({ files })` only on touch devices (`pointer: coarse`) that
+  support it, so a phone gets "Save Image"; desktop browsers also report file sharing as supported
+  but should just download. A cancelled share does nothing; a failed one falls back to a download.
+- `saveCardRun` is bumped on every open and close; a build checks it before showing anything, so
+  a slow image load can't put one product's card into a sheet reopened for another.
+
 ### Clients (Supabase `clients` / `client_requests` tables, plus `products.client_id`)
 
 All three must be created manually in the Supabase SQL editor first (the anon key can't run
