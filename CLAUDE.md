@@ -525,6 +525,17 @@ pasting a link still goes to the search bar). CSS hides it with the rest of the 
 result card is up (`body.result-active:not(.dock-open)`), and it comes back whenever the search
 bar does ("New product", or pasting a photo, which sets `dock-open` itself).
 
+**The fixed search dock covers the bottom of the Prices page**, so
+`body.dock-open[data-tab="prices"]` adds the dock's height to the body's bottom padding (and
+`.img-search` has a matching `scroll-margin`). Without it the widget's last row of buttons sat
+under the dock with nothing left to scroll: reported by the user as "can't scroll down to crop or
+new photo". Anything else that grows at the bottom of Prices while the dock is open relies on this
+padding too. On touch, the crop wrap and box are `touch-action:pan-y` and only the corner handles
+are `none`: the photo is most of a phone screen, and with `none` on all of it a swipe starting
+there never scrolled. A swipe the browser takes over fires `pointercancel`, which puts the box
+back where the drag started. `.is-actions[hidden]{display:none}` is needed because `display:flex`
+on the class beats the `hidden` attribute.
+
 Steps, strictly one after the other (the "Serper calls never run concurrently" rule applies):
 
 1. **Crop and upload.** The crop box is fractions of the photo (`isCrop`), pointer events for

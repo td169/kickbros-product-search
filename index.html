@@ -199,6 +199,7 @@
      product"), so it's never more than one tap away. */
   .img-search{
     position:relative;overflow:hidden;margin:0 0 16px;border-radius:26px;
+    scroll-margin:12px 0 calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 84px);
     background:
       radial-gradient(circle at 86% 0%, rgba(232,200,140,.16), transparent 55%),
       linear-gradient(165deg, #1e2b55 0%, #121b3a 48%, #0a0f22 100%);
@@ -238,14 +239,16 @@
   /* Exactly the size of the photo as shown, so the crop box's % positions are fractions of it. */
   .is-crop-wrap{
     position:relative;display:inline-block;max-width:100%;line-height:0;overflow:hidden;
-    border-radius:14px;touch-action:none;user-select:none;-webkit-user-select:none;
+    border-radius:14px;touch-action:pan-y;user-select:none;-webkit-user-select:none;
   }
   .is-crop-wrap img{display:block;max-width:100%;max-height:44vh;width:auto;height:auto;pointer-events:none;}
   .is-crop-box{
-    position:absolute;box-sizing:border-box;border:2px solid #fff;cursor:move;touch-action:none;
+    position:absolute;box-sizing:border-box;border:2px solid #fff;cursor:move;touch-action:pan-y;
     box-shadow:0 0 0 2000px rgba(5,8,20,.6);
   }
-  .is-crop-box i{position:absolute;width:30px;height:30px;}
+  /* The photo fills most of a phone screen, so it must not swallow every swipe: an up/down swipe
+     on it scrolls the page (pan-y), and only the four corners hold on to the finger. */
+  .is-crop-box i{position:absolute;width:44px;height:44px;touch-action:none;}
   .is-crop-box i::after{content:"";position:absolute;width:14px;height:14px;border:0 solid #fff;}
   .is-crop-box i[data-h="nw"]{left:-2px;top:-2px;cursor:nwse-resize;}
   .is-crop-box i[data-h="ne"]{right:-2px;top:-2px;cursor:nesw-resize;}
@@ -259,6 +262,7 @@
   .is-small{margin:10px 4px 0;font-size:12px;line-height:1.45;opacity:.68;}
   .is-small:empty{display:none;}
   .is-actions{display:flex;gap:10px;margin-top:14px;}
+  .is-actions[hidden]{display:none;}
   .is-btn{
     flex:1;height:44px;border:none;border-radius:var(--radius-pill);cursor:pointer;
     background:#f3e9da;color:#10162e;font-family:inherit;font-size:14px;font-weight:700;
@@ -409,6 +413,10 @@
     background:linear-gradient(to top, var(--bg) 65%, transparent);
   }
   body.dock-open[data-tab="prices"] .search-dock{display:block;}
+  /* The dock is fixed over the bottom of the page, so the page needs that much extra room under
+     its last element or whatever is down there (the image search's buttons) can never be scrolled
+     out from behind it. 84px = the dock's own height (74px) plus a little air. */
+  body.dock-open[data-tab="prices"]{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 84px);}
   .search-dock-inner{max-width:420px;margin:0 auto;}
   .search-row{display:flex;gap:10px;align-items:center;}
   .search-row input{
@@ -6770,6 +6778,8 @@
   }
 
   // Crop box: drag inside to move it, drag a corner to resize. Pointer events cover mouse and touch.
+  // On a touch screen an up/down swipe inside the box scrolls the page instead (see the CSS), so
+  // there the box moves with a sideways drag and resizes from its corners.
   (function () {
     const box = el('isCropBox'), wrap = el('isCropWrap');
     const MIN = 0.12;
@@ -6800,7 +6810,12 @@
       isCrop = c;
       isRenderCrop();
     });
-    ['pointerup', 'pointercancel'].forEach(t => box.addEventListener(t, () => { drag = null; }));
+    box.addEventListener('pointerup', () => { drag = null; });
+    // The browser took the gesture over as a page scroll: undo the few pixels the box moved first.
+    box.addEventListener('pointercancel', () => {
+      if (drag) { isCrop = drag.start; isRenderCrop(); }
+      drag = null;
+    });
   })();
 
   // The cropped area as a JPEG no bigger than IS_MAX_SIDE on its long side.

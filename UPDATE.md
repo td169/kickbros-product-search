@@ -6,6 +6,17 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-11-15 (later) — Search by image: buttons you couldn't scroll to
+
+- **The bottom of the Prices screen was stuck behind the link bar.** The link bar floats over the
+  bottom of the page, and the page didn't leave room for it, so the image search's buttons could
+  end up underneath with no way to scroll them up. The page now leaves that room.
+- **Swiping on the photo now scrolls the page.** The photo fills most of a phone screen and used
+  to swallow every swipe. Now an up/down swipe on it scrolls, and only the four corners (made
+  bigger) hold your finger to resize the box. A sideways drag still moves the box.
+- **"Adjust crop" and "New photo" no longer show up early.** They were appearing under the photo
+  before any search had finished, next to "Change photo" and "Search", which do the same jobs.
+
 ## 2026-11-15 — Search by image
 
 On the Prices screen, under "Prefer to paste both links yourself?", there's a new **Search by
