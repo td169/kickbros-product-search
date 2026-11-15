@@ -62,7 +62,8 @@ and `#settingsBack` returns there. Prices keeps its own "Prices" heading and pit
 ### Two independent data-acquisition paths, chosen per brand
 
 `BRANDS` (top of the script) maps each domain to a `build(url)` function that derives the
-matching UK/FR URL from whichever one the user pasted, plus a `scrapeBlocked` flag.
+matching UK/FR URL from whichever one the user pasted, plus a `scrapeBlocked` flag. Each entry
+also has `site` (its bare domain), which search by image needs; give a new brand one.
 
 - **Non-blocked brands** (Gucci, Moncler, Balenciaga, Goyard, Hermès, Burberry) → `runCheck` →
   `extractInfo` → `runApifyScrape`, which POSTs a `pageFunction` to Apify's `web-scraper` actor
@@ -509,6 +510,77 @@ That delete button only shows when the modal was opened from the Catalog:
 the same spot is "Remove from trip" (`trip_label: null`, no confirm since "From catalog" can add it
 back, and nothing is touched on screen if the write fails: `updateCatalogEntry` now returns
 whether it succeeded). From a client's purchases or requests it shows neither.
+
+### Search by image (Prices screen, `#imgSearch`)
+
+A widget under "Prefer to paste both links yourself?" that turns a photo into a brand-site link
+and hands it to `startCheckFromUrl()`. It never prices anything itself and doesn't touch the
+link-paste flow: prices, name, photo and the catalog row all come from the normal check. Code is
+the `is*` functions plus `runImageSearch`/`serperLens`, just above the `refreshRate` handler.
+
+One `<section data-state="idle|crop|running|results">`. Idle is a single big button (opens the
+file picker; `accept="image/*"` with no `capture`, so a phone offers camera or library) and the
+drop target. A photo also arrives by paste (`document` `paste`, Prices tab only, images only, so
+pasting a link still goes to the search bar). CSS hides it with the rest of the intro once a
+result card is up (`body.result-active:not(.dock-open)`), and it comes back whenever the search
+bar does ("New product", or pasting a photo, which sets `dock-open` itself).
+
+Steps, strictly one after the other (the "Serper calls never run concurrently" rule applies):
+
+1. **Crop and upload.** The crop box is fractions of the photo (`isCrop`), pointer events for
+   mouse and touch. `isCroppedBlob` draws the crop to a canvas, long side 1200px at most, JPEG.
+   It's uploaded to the public Supabase Storage bucket `lookup-images` under a random UUID name
+   (Lens needs a URL, not a file).
+2. **Google Lens** via Serper: `POST https://google.serper.dev/lens`, body
+   `{ url, gl: "gb", hl: "en" }`, same `X-API-KEY`. **The upload is deleted in a `finally` right
+   after this call, found or not**, because client screenshots can hold personal details.
+   `remove()` reports no error when a policy blocks it, it just returns nothing deleted, so an
+   empty answer counts as a failed delete and the widget tells the user to delete the file by hand.
+3. **Sort the matches** (`isSortMatches`): a link counts as a brand's only if its host is the
+   brand's `site` or a subdomain (`isBrandKeyForHost`; `BRANDS[k].test` alone is a substring check,
+   too loose for links picked automatically), is a product page (`isProductLink`), and is one
+   `startCheckFromUrl` can use (`isUsableLink`: `build()` gives a UK/FR pair, or it's already a UK
+   or FR link for Hermès/Loro Piana). One candidate per product (`productCode`), the UK link when
+   there is one, then FR, then another country (which `build()` converts for most brands).
+4. **Fallback, only when step 3 finds nothing:** one normal `serperSearch` for
+   `site:<brand site> <item name>`, the brand and name taken from another country's brand page if
+   Lens found one, else from the brand most often named in the match titles (`isBrandFromText`),
+   with the shop's name cut off the title (`isSearchTitle`). Same sorting applied to its results.
+
+**Nothing is priced until the user taps a card.** Up to 5 brand-site candidates; "Best match"
+only when Lens found exactly one, never for name-search results (those say so, since a name can
+match a different item). Other matches (resellers, a brand page for another country) show as
+plain links that open in a new tab. No brand-site match says "Couldn't find this on a brand
+site" with those links. The candidates stay in the widget after a tap, so a wrong pick is fixed
+from "New product" without paying for another search.
+
+**Not confirmed against a live Serper response.** Serper's Lens docs are behind a login. The
+endpoint and `{ url, gl, hl }` request come from third-party integrations' source
+(garylab/serper-mcp-server, an n8n node); the response's field names and the credit cost were not
+seen. So `serperLens` takes matches from whichever array is there (`organic` expected), retries
+once without `gl`/`hl` on a 400, and the widget shows the credits Serper itself reports
+(`data.credits`) after each search. **If image search misbehaves, ask for Settings → "Copy what
+Google returned"**: it now includes `lensLog` (the Lens response's keys and raw matches, plus the
+fallback search), which is kept apart from `serperLog` because every new check empties that.
+
+The bucket and its policies must be created once in the Supabase SQL editor (the anon key can't):
+
+```sql
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('lookup-images', 'lookup-images', true, 2097152, array['image/jpeg'])
+on conflict (id) do nothing;
+
+create policy "lookup-images anon upload" on storage.objects
+  for insert to anon with check (bucket_id = 'lookup-images');
+create policy "lookup-images anon read" on storage.objects
+  for select to anon using (bucket_id = 'lookup-images');
+create policy "lookup-images anon delete" on storage.objects
+  for delete to anon using (bucket_id = 'lookup-images');
+```
+
+The read policy is needed for the delete to work, not for viewing (a public bucket serves files
+without it). Until the bucket exists the upload fails and the widget says which of the two
+(bucket or policies) is missing.
 
 ### Savings card (download button on product rows)
 

@@ -192,6 +192,128 @@
      it just asked to show stays invisible. */
   body.result-active #pricesView > .manual-panel.open{display:flex;}
 
+  /* Search by image — a widget in the Home trip widget's style (same fixed dark colours in light
+     and dark mode), under "Prefer to paste both links yourself?". Idle it's one big tappable drop
+     zone; once a photo is in, it grows in place into crop → progress → candidates. Hidden with
+     the rest of the intro once a result card is up, back whenever the search bar is ("New
+     product"), so it's never more than one tap away. */
+  .img-search{
+    position:relative;overflow:hidden;margin:0 0 16px;border-radius:26px;
+    background:
+      radial-gradient(circle at 86% 0%, rgba(232,200,140,.16), transparent 55%),
+      linear-gradient(165deg, #1e2b55 0%, #121b3a 48%, #0a0f22 100%);
+    color:#f3e9da;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.06), 0 10px 24px rgba(0,0,0,.28);
+  }
+  body.result-active:not(.dock-open) #pricesView > .img-search{display:none;}
+  .img-search.drag{box-shadow:inset 0 0 0 2px #e8c88c, 0 10px 24px rgba(0,0,0,.28);}
+  .img-search-drop{
+    width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;
+    padding:26px 18px 24px;background:none;border:none;color:inherit;font:inherit;
+    text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent;
+    transition:transform .12s ease, filter .12s ease;
+  }
+  .img-search-drop:active{transform:scale(.97);filter:brightness(1.12);}
+  .img-search-icon{
+    width:46px;height:46px;border-radius:15px;margin-bottom:4px;
+    background:rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;
+  }
+  .img-search-title{
+    font-family:'DM Serif Display',Georgia,serif;font-weight:700;font-synthesis:none;
+    font-size:25px;line-height:1.1;letter-spacing:-.01em;
+  }
+  .img-search-hint{font-size:13px;font-weight:500;opacity:.7;}
+  .img-search-body{display:none;padding:14px 14px 16px;}
+  .img-search:not([data-state="idle"]) .img-search-drop{display:none;}
+  .img-search:not([data-state="idle"]) .img-search-body{display:block;}
+  .is-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 2px 12px 4px;}
+  .is-head-title{font-family:'DM Serif Display',Georgia,serif;font-weight:700;font-synthesis:none;font-size:19px;}
+  .is-x{
+    width:30px;height:30px;flex:none;border:none;border-radius:50%;cursor:pointer;
+    background:rgba(255,255,255,.1);color:inherit;font-size:19px;line-height:1;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .is-crop-pane{text-align:center;}
+  .img-search[data-state="results"] .is-crop-pane{display:none;}
+  /* Exactly the size of the photo as shown, so the crop box's % positions are fractions of it. */
+  .is-crop-wrap{
+    position:relative;display:inline-block;max-width:100%;line-height:0;overflow:hidden;
+    border-radius:14px;touch-action:none;user-select:none;-webkit-user-select:none;
+  }
+  .is-crop-wrap img{display:block;max-width:100%;max-height:44vh;width:auto;height:auto;pointer-events:none;}
+  .is-crop-box{
+    position:absolute;box-sizing:border-box;border:2px solid #fff;cursor:move;touch-action:none;
+    box-shadow:0 0 0 2000px rgba(5,8,20,.6);
+  }
+  .is-crop-box i{position:absolute;width:30px;height:30px;}
+  .is-crop-box i::after{content:"";position:absolute;width:14px;height:14px;border:0 solid #fff;}
+  .is-crop-box i[data-h="nw"]{left:-2px;top:-2px;cursor:nwse-resize;}
+  .is-crop-box i[data-h="ne"]{right:-2px;top:-2px;cursor:nesw-resize;}
+  .is-crop-box i[data-h="sw"]{left:-2px;bottom:-2px;cursor:nesw-resize;}
+  .is-crop-box i[data-h="se"]{right:-2px;bottom:-2px;cursor:nwse-resize;}
+  .is-crop-box i[data-h="nw"]::after{left:0;top:0;border-width:5px 0 0 5px;}
+  .is-crop-box i[data-h="ne"]::after{right:0;top:0;border-width:5px 5px 0 0;}
+  .is-crop-box i[data-h="sw"]::after{left:0;bottom:0;border-width:0 0 5px 5px;}
+  .is-crop-box i[data-h="se"]::after{right:0;bottom:0;border-width:0 5px 5px 0;}
+  .img-search[data-state="running"] .is-crop-box{pointer-events:none;opacity:.6;}
+  .is-small{margin:10px 4px 0;font-size:12px;line-height:1.45;opacity:.68;}
+  .is-small:empty{display:none;}
+  .is-actions{display:flex;gap:10px;margin-top:14px;}
+  .is-btn{
+    flex:1;height:44px;border:none;border-radius:var(--radius-pill);cursor:pointer;
+    background:#f3e9da;color:#10162e;font-family:inherit;font-size:14px;font-weight:700;
+  }
+  .is-btn.ghost{background:rgba(255,255,255,.1);color:inherit;}
+  .is-btn:disabled{opacity:.45;cursor:default;}
+  .is-steps{list-style:none;margin:14px 4px 0;padding:0;display:flex;flex-direction:column;gap:8px;text-align:left;}
+  .is-steps[hidden]{display:none;}
+  .is-steps li{display:flex;align-items:center;gap:10px;font-size:13.5px;font-weight:500;opacity:.45;}
+  .is-steps li::before{
+    content:"";width:14px;height:14px;flex:none;box-sizing:border-box;border-radius:50%;
+    border:2px solid currentColor;
+  }
+  .is-steps li[data-status="active"]{opacity:1;}
+  .is-steps li[data-status="active"]::before{border-color:rgba(255,255,255,.25);border-top-color:#f3e9da;animation:scSpin .8s linear infinite;}
+  .is-steps li[data-status="done"]{opacity:.8;}
+  .is-steps li[data-status="done"]::before{border-color:#5fd884;background:#5fd884;}
+  .is-steps li[data-status="failed"]{opacity:1;color:#ff9d8f;}
+  .is-steps li[data-status="failed"]::before{border-color:#ff9d8f;background:#ff9d8f;}
+  .is-msg{margin:12px 4px 0;font-size:13.5px;line-height:1.45;font-weight:500;}
+  .is-msg:empty,.is-warn:empty{display:none;}
+  .is-msg.err,.is-warn{color:#ff9d8f;}
+  .is-warn{margin:10px 4px 0;font-size:12.5px;line-height:1.45;word-break:break-word;}
+  .is-link{background:none;border:none;padding:0;color:inherit;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;}
+  .is-results{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+  .is-results:empty{display:none;}
+  .is-sublabel{margin:8px 4px 0;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.6;}
+  .is-cand{
+    display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;padding:10px;
+    border:none;border-radius:16px;background:rgba(255,255,255,.07);color:inherit;
+    font:inherit;text-align:left;text-decoration:none;cursor:pointer;
+  }
+  .is-cand:active{background:rgba(255,255,255,.13);}
+  .is-cand.best{background:rgba(232,200,140,.14);box-shadow:inset 0 0 0 1.5px #e8c88c;}
+  .is-cand.picked{box-shadow:inset 0 0 0 1.5px #5fd884;}
+  .is-cand-thumb{
+    width:58px;height:58px;flex:none;border-radius:11px;overflow:hidden;background:#fff;
+    display:flex;align-items:center;justify-content:center;
+    color:#6b6b6b;font-size:15px;font-weight:700;
+  }
+  .is-cand-thumb img{width:100%;height:100%;object-fit:cover;}
+  .is-cand-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
+  .is-cand-title{
+    font-size:13.5px;font-weight:600;line-height:1.3;
+    display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .is-cand-site{font-size:12px;opacity:.66;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .is-cand-tags{display:flex;flex-wrap:wrap;gap:5px;}
+  .is-badge{
+    font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+    padding:3px 7px;border-radius:var(--radius-pill);background:rgba(95,216,132,.18);color:#a9e2b8;
+  }
+  .is-badge.best{background:#e8c88c;color:#10162e;}
+  .is-cand-go{flex:none;opacity:.6;font-size:15px;}
+
   /* home screen — iOS-style widgets: the time-sensitive trip widget full width at the top, then
      one small widget per section, 2 per row. Fixed dark colours in light and dark mode alike,
      like a real widget. */
@@ -1288,6 +1410,47 @@
       <button class="btn-pill" id="manualCheckBtn">Use these links</button>
     </div>
 
+    <section class="img-search" id="imgSearch" data-state="idle" aria-label="Search by image">
+      <input type="file" id="imgSearchFile" accept="image/*" hidden>
+      <button type="button" class="img-search-drop" id="imgSearchDrop">
+        <span class="img-search-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="24" height="24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5-5L5 20"/></svg>
+        </span>
+        <span class="img-search-title">Search by image</span>
+        <span class="img-search-hint" id="imgSearchHint">Paste, drop or upload a photo</span>
+      </button>
+      <div class="img-search-body">
+        <div class="is-head">
+          <span class="is-head-title">Search by image</span>
+          <button type="button" class="is-x" id="isResetBtn" aria-label="Clear the photo">×</button>
+        </div>
+        <div class="is-crop-pane">
+          <div class="is-crop-wrap" id="isCropWrap">
+            <img id="isCropImg" alt="The photo to search with" draggable="false">
+            <div class="is-crop-box" id="isCropBox"><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div>
+          </div>
+          <p class="is-small">Drag the corners so the box holds just the item, without chat text or other products.</p>
+          <div class="is-actions">
+            <button type="button" class="is-btn ghost" id="isChangeBtn">Change photo</button>
+            <button type="button" class="is-btn" id="isSearchBtn">Search</button>
+          </div>
+        </div>
+        <ol class="is-steps" id="isSteps" hidden>
+          <li data-step="upload">Uploading</li>
+          <li data-step="lens">Searching Google Lens</li>
+          <li data-step="find">Finding official site</li>
+        </ol>
+        <p class="is-msg" id="isMsg"></p>
+        <div class="is-results" id="isResults"></div>
+        <p class="is-small" id="isNote"></p>
+        <p class="is-warn" id="isWarn"></p>
+        <div class="is-actions" id="isResultActions" hidden>
+          <button type="button" class="is-btn ghost" id="isRecropBtn">Adjust crop</button>
+          <button type="button" class="is-btn ghost" id="isNewPhotoBtn">New photo</button>
+        </div>
+      </div>
+    </section>
+
     <div class="card" id="card">
       <button type="button" class="eye-btn card-eye-btn" id="pricesEyeBtn" aria-label="Hide sale price, reseller price and profit" aria-pressed="false"></button>
       <div class="manual-banner" id="manualBanner">
@@ -2026,14 +2189,16 @@
   const splashEl = document.getElementById('splashScreen');
   if (splashEl) splashEl.addEventListener('click', () => { splashEl.style.animation = 'none'; splashEl.style.opacity = '0'; splashEl.style.visibility = 'hidden'; });
 
+  // `site` is the brand's own domain: used by search-by-image to accept only links really on
+  // it (isBrandKeyForHost) and to search it by name ("site:hermes.com …"). A new brand needs one.
   const BRANDS = {
-    dior: { name:'Dior', test: h => h.includes('dior.com'), scrapeBlocked:true,
+    dior: { name:'Dior', site:'dior.com', test: h => h.includes('dior.com'), scrapeBlocked:true,
       build: (url) => ({
         uk: url.replace(/\/[a-z]{2}_[a-z]{2}\//, '/en_gb/'),
         fr: url.replace(/\/[a-z]{2}_[a-z]{2}\//, '/fr_fr/')
       })
     },
-    lv: { name:'Louis Vuitton', test: h => h.includes('louisvuitton.com'), scrapeBlocked:true,
+    lv: { name:'Louis Vuitton', site:'louisvuitton.com', test: h => h.includes('louisvuitton.com'), scrapeBlocked:true,
       // FR uses /produits/, every other locale uses /products/ — the locale-segment swap
       // alone leaves the wrong word in place, so it's fixed explicitly here too.
       build: (url) => ({
@@ -2041,31 +2206,31 @@
         fr: url.replace(/https:\/\/[a-z]{2}\.louisvuitton\.com/, 'https://fr.louisvuitton.com').replace(/\/[a-z]{3}-[a-z]{2}\//, '/fra-fr/').replace('/products/', '/produits/')
       })
     },
-    gucci: { name:'Gucci', test: h => h.includes('gucci.com'),
+    gucci: { name:'Gucci', site:'gucci.com', test: h => h.includes('gucci.com'),
       build: (url) => ({
         uk: url.replace(/\/[a-z]{2}\/[a-z]{2}_[a-z]{2}\//, '/uk/en_gb/'),
         fr: url.replace(/\/[a-z]{2}\/[a-z]{2}_[a-z]{2}\//, '/fr/fr_fr/')
       })
     },
-    moncler: { name:'Moncler', test: h => h.includes('moncler.com'),
+    moncler: { name:'Moncler', site:'moncler.com', test: h => h.includes('moncler.com'),
       build: (url) => ({
         uk: url.replace(/\/[a-z]{2}-[a-z]{2}\//, '/en-gb/'),
         fr: url.replace(/\/[a-z]{2}-[a-z]{2}\//, '/fr-fr/')
       })
     },
-    balenciaga: { name:'Balenciaga', test: h => h.includes('balenciaga.com'),
+    balenciaga: { name:'Balenciaga', site:'balenciaga.com', test: h => h.includes('balenciaga.com'),
       build: (url) => ({
         uk: url.replace(/\/[a-z]{2}-[a-z]{2}\//, '/en-gb/'),
         fr: url.replace(/\/[a-z]{2}-[a-z]{2}\//, '/fr-fr/')
       })
     },
-    goyard: { name:'Goyard', test: h => h.includes('goyard.com'),
+    goyard: { name:'Goyard', site:'goyard.com', test: h => h.includes('goyard.com'),
       build: (url) => ({
         uk: url.replace(/\/[a-z]{2}_[a-z]{2}\//, '/uk_en/'),
         fr: url.replace(/\/[a-z]{2}_[a-z]{2}\//, '/fr_fr/')
       })
     },
-    hermes: { name:'Hermès', test: h => h.includes('hermes.com'),
+    hermes: { name:'Hermès', site:'hermes.com', test: h => h.includes('hermes.com'),
       // Genuine listings scrape fine (confirmed live: a real headless browser gets 200 + a
       // real og:title on both fr/fr and uk/en URLs, no bot-blocking) — not scrapeBlocked.
       // But the descriptive slug is independently translated per product (e.g.
@@ -2082,7 +2247,7 @@
       // to auto-find it (see findOtherLocaleLink) before falling back to asking the user.
       localePatterns: { fr: /\/fr\/fr\//i, uk: /\/uk\/en\//i }
     },
-    prada: { name:'Prada', test: h => h.includes('prada.com'), scrapeBlocked:true,
+    prada: { name:'Prada', site:'prada.com', test: h => h.includes('prada.com'), scrapeBlocked:true,
       // Path-swap pattern works reliably: Prada's URL separates the descriptive slug from the
       // product code (.../p/<slug>/<code>) and canonicalises on the code, so a locale-swapped
       // URL that keeps the other locale's slug words still 200s and resolves to the right
@@ -2100,7 +2265,7 @@
         fr: url.replace(/\/[a-z]{2}\/[a-z]{2}\/p\//, '/fr/fr/p/')
       })
     },
-    loropiana: { name:'Loro Piana', test: h => h.includes('loropiana.com'), scrapeBlocked:true,
+    loropiana: { name:'Loro Piana', site:'loropiana.com', test: h => h.includes('loropiana.com'), scrapeBlocked:true,
       // Confirmed live: every URL variant (real fr., real uk., even a same-code subdomain
       // swap) comes back 403 outright — blocked at the network level, same as Dior/LV.
       // Locale here is a subdomain (fr./uk.), not a path segment — and unlike every other brand
@@ -2122,7 +2287,7 @@
       },
       searchQuery: (code, locale) => locale + '.loropiana ' + code
     },
-    chanel: { name:'Chanel', test: h => h.includes('chanel.com'), scrapeBlocked:true,
+    chanel: { name:'Chanel', site:'chanel.com', test: h => h.includes('chanel.com'), scrapeBlocked:true,
       // Confirmed live: both /gb/fashion/ and /fr/mode/ product URLs 403 under a plain fetch
       // with real browser headers — same network-level block as Dior/LV, so this goes straight
       // to manual mode rather than attempting a doomed Apify scrape.
@@ -2143,7 +2308,7 @@
       // same item from either locale's link still dedupes to the same catalog row.
       sku: url => { const m = url.match(/\/p\/([A-Z0-9]+)\//); return m ? m[1] : null; }
     },
-    burberry: { name:'Burberry', test: h => h.includes('burberry.com'),
+    burberry: { name:'Burberry', site:'burberry.com', test: h => h.includes('burberry.com'),
       // NOT scrapeBlocked — confirmed live: plain curl gets 200/301/302 on every URL variant
       // tried (no 403 anywhere), and a real Apify run against the UK link returned a genuine
       // title and a schema.org structuredPrice (£1,995 GBP) with no bot-blocking at all.
@@ -2263,9 +2428,11 @@
 
   el('copySearchLog').addEventListener('click', async () => {
     const note = el('copySearchLogNote');
-    if (!serperLog.length) { note.textContent = 'nothing searched yet, check a product first'; return; }
-    const text = JSON.stringify(serperLog, null, 1);
-    try { await navigator.clipboard.writeText(text); note.textContent = 'copied (' + serperLog.length + ' searches), paste it to Claude'; }
+    // The last photo search (lensLog) goes first, then the searches for the last product checked.
+    const log = lensLog.concat(serperLog);
+    if (!log.length) { note.textContent = 'nothing searched yet, check a product first'; return; }
+    const text = JSON.stringify(log, null, 1);
+    try { await navigator.clipboard.writeText(text); note.textContent = 'copied (' + log.length + ' searches), paste it to Claude'; }
     catch (e) { console.log(text); note.textContent = 'couldn’t copy here, it’s in the browser console'; }
   });
 
@@ -6525,6 +6692,501 @@
     try { const h = new URL(uk).hostname; const bk = Object.keys(BRANDS).find(k => BRANDS[k].test(h)); if (bk) { brandLabel = BRANDS[bk].name; scrapeBlocked = !!BRANDS[bk].scrapeBlocked; brandKey = bk; } } catch(e){}
     if (scrapeBlocked) showManualMode(uk, fr, brandLabel, brandKey, brandKey === 'lv' ? guessLvName(uk) : null);
     else runCheck(uk, fr, brandLabel, brandKey);
+  });
+
+  // ---- search by image (photo → Google Lens → brand-site link → the normal check) ----
+  // Only ever finds a LINK. Whatever the user taps is handed to startCheckFromUrl() exactly as if
+  // they'd pasted it, so prices, name, photo and the catalog row all come from the existing flow.
+  // Order of work, each step awaited before the next (Serper calls are never concurrent):
+  //   1. crop + shrink the photo, upload it to the public Supabase Storage bucket (Lens needs a URL)
+  //   2. Serper's Google Lens on that URL, then delete the upload straight away, found or not
+  //   3. keep matches on a supported brand's own site; if there are none, one normal search
+  //      restricted to that brand's site using the name a match gave the item
+  // Nothing is priced until the user taps a candidate.
+  const IS_BUCKET = 'lookup-images';
+  const IS_MAX_SIDE = 1200;
+  const IS_MAX_OFFICIAL = 5;
+  const imgSearch = el('imgSearch');
+  // What Lens (and the name search after it) returned for the last photo, for Settings' "Copy
+  // what Google returned". Kept apart from serperLog, which every new check empties.
+  const lensLog = [];
+  let isObjectUrl = null;
+  let isCrop = { x0: 0, y0: 0, x1: 1, y1: 1 };   // fractions of the photo
+  let isRun = 0;                                  // bumped whenever the photo changes or is cleared
+
+  function isSetState(state) { imgSearch.dataset.state = state; }
+  function isSetMsg(text, isErr) {
+    const m = el('isMsg');
+    m.textContent = text || '';
+    m.classList.toggle('err', !!isErr);
+  }
+  function isSetStep(step, status) {
+    const li = el('isSteps').querySelector('[data-step="' + step + '"]');
+    if (li) li.dataset.status = status;
+  }
+  function isClearOutput() {
+    isSetMsg('');
+    el('isResults').innerHTML = '';
+    el('isNote').textContent = '';
+    el('isWarn').textContent = '';
+    el('isSteps').hidden = true;
+    el('isResultActions').hidden = true;
+    el('isSearchBtn').disabled = false;
+    el('isChangeBtn').disabled = false;
+  }
+  function isReset(hint) {
+    isRun++;
+    if (isObjectUrl) { URL.revokeObjectURL(isObjectUrl); isObjectUrl = null; }
+    el('isCropImg').removeAttribute('src');
+    el('imgSearchFile').value = '';
+    isClearOutput();
+    el('imgSearchHint').textContent = hint || 'Paste, drop or upload a photo';
+    isSetState('idle');
+  }
+  function isRenderCrop() {
+    const s = el('isCropBox').style;
+    s.left = isCrop.x0 * 100 + '%';
+    s.top = isCrop.y0 * 100 + '%';
+    s.width = (isCrop.x1 - isCrop.x0) * 100 + '%';
+    s.height = (isCrop.y1 - isCrop.y0) * 100 + '%';
+  }
+  function isLoadFile(file) {
+    if (!file || !/^image\//i.test(file.type || '')) { isReset('That isn’t an image. Paste, drop or upload a photo'); return; }
+    isRun++;
+    const url = URL.createObjectURL(file);
+    const img = el('isCropImg');
+    img.onload = () => { isCrop = { x0: 0, y0: 0, x1: 1, y1: 1 }; isRenderCrop(); };
+    img.onerror = () => isReset('Couldn’t open that image. Try a screenshot, JPG or PNG');
+    if (isObjectUrl) URL.revokeObjectURL(isObjectUrl);
+    isObjectUrl = url;
+    isCrop = { x0: 0, y0: 0, x1: 1, y1: 1 };
+    isRenderCrop();
+    img.src = url;
+    isClearOutput();
+    isSetState('crop');
+    // The widget is hidden while a result card has the screen; a pasted photo brings it back.
+    document.body.classList.add('dock-open');
+    imgSearch.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  // Crop box: drag inside to move it, drag a corner to resize. Pointer events cover mouse and touch.
+  (function () {
+    const box = el('isCropBox'), wrap = el('isCropWrap');
+    const MIN = 0.12;
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    let drag = null;
+    box.addEventListener('pointerdown', e => {
+      if (imgSearch.dataset.state !== 'crop') return;
+      e.preventDefault();
+      drag = { handle: (e.target.dataset && e.target.dataset.h) || 'move', x: e.clientX, y: e.clientY, start: Object.assign({}, isCrop) };
+      try { box.setPointerCapture(e.pointerId); } catch (err) { /* still works while the pointer stays over the box */ }
+    });
+    box.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const r = wrap.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const dx = (e.clientX - drag.x) / r.width, dy = (e.clientY - drag.y) / r.height;
+      const s = drag.start, c = Object.assign({}, s);
+      if (drag.handle === 'move') {
+        const w = s.x1 - s.x0, h = s.y1 - s.y0;
+        c.x0 = clamp(s.x0 + dx, 0, 1 - w); c.x1 = c.x0 + w;
+        c.y0 = clamp(s.y0 + dy, 0, 1 - h); c.y1 = c.y0 + h;
+      } else {
+        if (drag.handle.includes('w')) c.x0 = clamp(s.x0 + dx, 0, s.x1 - MIN);
+        if (drag.handle.includes('e')) c.x1 = clamp(s.x1 + dx, s.x0 + MIN, 1);
+        if (drag.handle.includes('n')) c.y0 = clamp(s.y0 + dy, 0, s.y1 - MIN);
+        if (drag.handle.includes('s')) c.y1 = clamp(s.y1 + dy, s.y0 + MIN, 1);
+      }
+      isCrop = c;
+      isRenderCrop();
+    });
+    ['pointerup', 'pointercancel'].forEach(t => box.addEventListener(t, () => { drag = null; }));
+  })();
+
+  // The cropped area as a JPEG no bigger than IS_MAX_SIDE on its long side.
+  function isCroppedBlob() {
+    const img = el('isCropImg');
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    if (!nw || !nh) return Promise.reject(new Error('the photo has not loaded'));
+    const sx = Math.round(isCrop.x0 * nw), sy = Math.round(isCrop.y0 * nh);
+    const sw = Math.max(1, Math.round((isCrop.x1 - isCrop.x0) * nw)), sh = Math.max(1, Math.round((isCrop.y1 - isCrop.y0) * nh));
+    const scale = Math.min(1, IS_MAX_SIDE / Math.max(sw, sh));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(sw * scale));
+    c.height = Math.max(1, Math.round(sh * scale));
+    const x = c.getContext('2d');
+    x.fillStyle = '#fff';
+    x.fillRect(0, 0, c.width, c.height);
+    x.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return new Promise((resolve, reject) => c.toBlob(b => (b ? resolve(b) : reject(new Error('could not turn the photo into a JPEG'))), 'image/jpeg', 0.85));
+  }
+  function isRandomName() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID() + '.jpg';
+    const a = new Uint8Array(16);
+    crypto.getRandomValues(a);
+    return Array.from(a, b => b.toString(16).padStart(2, '0')).join('') + '.jpg';
+  }
+  // False if the file may still be in the bucket. remove() answers with the rows it deleted and
+  // no error when a policy stops it, so an empty answer counts as "not deleted".
+  async function isDeleteUpload(store, path) {
+    try {
+      const { data, error } = await store.remove([path]);
+      if (error) throw error;
+      if (!data || !data.length) throw new Error('nothing was deleted (is the delete or read policy missing?)');
+      return true;
+    } catch (e) { console.error('image search: delete failed', path, e); return false; }
+  }
+
+  // One Google Lens search. Returns { list, credits }; throws with what Serper said on failure.
+  // The response's field names were never seen live (Serper's Lens docs sit behind a login), so
+  // this takes the matches from whichever list is there, and logs the response's keys.
+  async function serperLens(imageUrl, token) {
+    const post = body => fetch('https://google.serper.dev/lens', {
+      method: 'POST',
+      headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    let res = await post({ url: imageUrl, gl: 'gb', hl: 'en' });
+    // gl/hl are optional; if Serper objects to the request, the bare form is tried once.
+    if (res.status === 400) res = await post({ url: imageUrl });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      lensLog.push({ kind: 'lens', failed: res.status, said: text.slice(0, 300) });
+      const err = new Error('Serper Lens answered ' + res.status + (text ? ': ' + text.slice(0, 200) : ''));
+      err.status = res.status;
+      throw err;
+    }
+    const data = await res.json();
+    const raw = [data.organic, data.visualMatches, data.visual_matches, data.images, data.results].find(Array.isArray)
+      || Object.values(data).find(v => Array.isArray(v) && v.some(o => o && o.link)) || [];
+    const list = raw.filter(o => o && o.link).map(o => ({
+      title: o.title || '',
+      link: String(o.link),
+      source: o.source || '',
+      thumb: o.thumbnailUrl || o.thumbnail || o.imageUrl || o.image || null
+    }));
+    lensLog.push({ kind: 'lens', credits: data.credits, keys: Object.keys(data), results: raw });
+    return { list, credits: Number(data.credits) || 0 };
+  }
+
+  // The brand whose own site this host is, or null. Stricter than BRANDS[k].test alone, which is
+  // a substring check: a link picked out of search results automatically has to be on the real
+  // domain or a subdomain of it ("dior.com.something.net" is not Dior).
+  function isBrandKeyForHost(hostname) {
+    const h = (hostname || '').toLowerCase().replace(/^www\./, '');
+    return Object.keys(BRANDS).find(k => {
+      const b = BRANDS[k];
+      return b.test(h) && (!b.site || h === b.site || h.endsWith('.' + b.site));
+    }) || null;
+  }
+  // A product page rather than a home or category page: every supported brand's product link
+  // carries a code with digits in it. Some category links do too (Prada's end in "/c/10156EU"),
+  // so the usual category markers are ruled out as well. It only has to be good enough to keep
+  // junk out of the list: nothing is priced until the user has tapped the card.
+  function isProductLink(u) {
+    const path = u.pathname.replace(/\/+$/, '');
+    if (/\/(c|ca|category|categories|collections?|search)(\/|$)|\/_\/N-/i.test(path)) return false;
+    return path.length > 15 && /\d{3}/.test(path);
+  }
+  // 0 = UK link, 1 = French, 2 = some other country.
+  function isLocaleRank(brand, link) {
+    if (brand.localePatterns) return brand.localePatterns.uk.test(link) ? 0 : (brand.localePatterns.fr.test(link) ? 1 : 2);
+    const pair = brand.build(link);
+    return pair.uk === link ? 0 : (pair.fr === link ? 1 : 2);
+  }
+  // Whether startCheckFromUrl can do anything with this link: either the brand's build() turns
+  // it into a UK/FR pair, or (Hermès, Loro Piana, which can't be converted) it's already UK or FR.
+  function isUsableLink(brand, link) {
+    const pair = brand.build(link);
+    return pair.uk !== pair.fr || !!detectLocale(brand, link);
+  }
+  function isCleanLink(link) {
+    try {
+      const u = new URL(link);
+      Array.from(u.searchParams.keys()).forEach(k => { if (/^(utm_|srsltid$|gclid$|fbclid$|gad_|gbraid$|wbraid$)/i.test(k)) u.searchParams.delete(k); });
+      u.hash = '';
+      return u.toString();
+    } catch (e) { return link; }
+  }
+  // Sorts search results into brand-site product pages the check can use (one per product, the UK
+  // link when there is one), brand-site pages it can't use, and everything else.
+  function isSortMatches(list) {
+    const byProduct = new Map(), unusable = [], others = [];
+    list.forEach((r, i) => {
+      let u;
+      try { u = new URL(r.link); } catch (e) { return; }
+      if (!/^https?:$/.test(u.protocol)) return;
+      const key = isBrandKeyForHost(u.hostname);
+      if (!key) { others.push(Object.assign({ host: u.hostname.replace(/^www\./, '') }, r)); return; }
+      if (!isProductLink(u)) return;   // the brand's home or a category page: no use to anyone
+      const brand = BRANDS[key], link = isCleanLink(r.link);
+      const cand = Object.assign({}, r, { link, brandKey: key, host: u.hostname.replace(/^www\./, ''), rank: isLocaleRank(brand, link), order: i });
+      if (!isUsableLink(brand, link)) { unusable.push(cand); return; }
+      const id = key + ':' + String(productCode(link) || link).toLowerCase();
+      const have = byProduct.get(id);
+      if (!have) byProduct.set(id, cand);
+      else if (cand.rank < have.rank) byProduct.set(id, Object.assign(cand, { order: have.order, thumb: cand.thumb || have.thumb }));
+    });
+    const official = Array.from(byProduct.values()).sort((a, b) => a.order - b.order);
+    return { official, unusable, others };
+  }
+  // Which supported brand the matches are talking about, and the name they give the item.
+  function isBrandFromText(list) {
+    const alias = { lv: ['louis vuitton', 'vuitton'] };
+    const top = list.slice(0, 12).map(r => normalizeBrandName(r.title + ' ' + r.source));
+    let best = null;
+    Object.keys(BRANDS).forEach(k => {
+      const names = alias[k] || [normalizeBrandName(BRANDS[k].name)];
+      const hits = top.map((t, i) => (names.some(n => t.includes(n)) ? i : -1)).filter(i => i >= 0);
+      if (hits.length && (!best || hits.length > best.count)) best = { key: k, count: hits.length, title: list[hits[0]].title, source: list[hits[0]].source };
+    });
+    return best;
+  }
+  // A listing's title cut down to the item's name: no "| Shop name" tail, at most ten words.
+  function isSearchTitle(title, source) {
+    let t = String(title || '').split(/\s[|–—]\s/)[0];
+    const src = normalizeBrandName(source);
+    const parts = t.split(/\s-\s/);
+    if (parts.length > 1 && src && normalizeBrandName(parts[parts.length - 1]).includes(src.split('.')[0])) parts.pop();
+    t = parts.join(' ').replace(/["“”]/g, ' ').replace(/\s+/g, ' ').trim();
+    return t.split(' ').slice(0, 10).join(' ');
+  }
+
+  function isCandidateCard(c, opts) {
+    const priceable = !!c.brandKey && !opts.linkOnly;
+    const node = document.createElement(priceable ? 'button' : 'a');
+    node.className = 'is-cand' + (opts.best ? ' best' : '');
+    if (priceable) node.type = 'button';
+    else { node.href = c.link; node.target = '_blank'; node.rel = 'noopener noreferrer'; }
+
+    const thumb = document.createElement('span');
+    thumb.className = 'is-cand-thumb';
+    const fallback = initials(c.brandKey ? BRANDS[c.brandKey].name : (c.source || c.host));
+    if (c.thumb) {
+      const img = document.createElement('img');
+      img.alt = '';
+      img.referrerPolicy = 'no-referrer';
+      img.onerror = () => { img.remove(); thumb.textContent = fallback; };
+      img.src = c.thumb;
+      thumb.appendChild(img);
+    } else thumb.textContent = fallback;
+
+    const text = document.createElement('span');
+    text.className = 'is-cand-text';
+    if (c.brandKey) {
+      const tags = document.createElement('span');
+      tags.className = 'is-cand-tags';
+      if (opts.best) { const b = document.createElement('span'); b.className = 'is-badge best'; b.textContent = 'Best match'; tags.appendChild(b); }
+      const o = document.createElement('span'); o.className = 'is-badge'; o.textContent = 'Official site'; tags.appendChild(o);
+      text.appendChild(tags);
+    }
+    const title = document.createElement('span');
+    title.className = 'is-cand-title';
+    title.textContent = c.title || c.link;
+    const site = document.createElement('span');
+    site.className = 'is-cand-site';
+    site.textContent = c.brandKey
+      ? c.host + (c.rank === 0 ? ' · UK' : (c.rank === 1 ? ' · France' : (priceable ? '' : ' · another country')))
+      : (c.source && normalizeBrandName(c.source) !== normalizeBrandName(c.host) ? c.source + ' · ' + c.host : c.host);
+    text.appendChild(title);
+    text.appendChild(site);
+
+    const go = document.createElement('span');
+    go.className = 'is-cand-go';
+    go.textContent = priceable ? '›' : '↗';
+
+    node.appendChild(thumb);
+    node.appendChild(text);
+    node.appendChild(go);
+    if (priceable) {
+      node.addEventListener('click', () => {
+        el('isResults').querySelectorAll('.is-cand.picked').forEach(n => n.classList.remove('picked'));
+        node.classList.add('picked');
+        // From here on it is the ordinary check, as if this link had been pasted. The candidates
+        // stay in the widget, so a wrong pick can be corrected from "New product" without
+        // paying for another search.
+        urlInput.value = c.link;
+        startCheckFromUrl(c.link);
+      });
+    }
+    return node;
+  }
+
+  // r: { official, unusable, others, byName, site, lensCount, credits, nameSearchFailed }
+  function isShowResults(r) {
+    const wrap = el('isResults');
+    wrap.innerHTML = '';
+    const official = r.official.slice(0, IS_MAX_OFFICIAL);
+    // Brand-site pages the check can't use (another country's Hermès page, say) are still worth
+    // opening, so they go in with the other matches rather than being thrown away.
+    const elsewhere = r.unusable.concat(r.others).slice(0, official.length ? Math.max(0, 3 - official.length) : 5);
+    const sub = text => { const p = document.createElement('p'); p.className = 'is-sublabel'; p.textContent = text; wrap.appendChild(p); };
+
+    if (official.length) {
+      const best = !r.byName && r.official.length === 1;
+      if (r.byName) isSetMsg('No photo match on a brand site. These came from searching ' + r.site + ' by name, so check it’s the same item, then tap it to get prices.');
+      else isSetMsg(best ? 'Is this the one? Tap it to get prices.' : 'Which one is it? Tap it to get prices.');
+      official.forEach((c, i) => wrap.appendChild(isCandidateCard(c, { best: best && i === 0 })));
+      if (elsewhere.length) sub('Other matches (open to look)');
+    } else if (elsewhere.length) {
+      isSetMsg('Couldn’t find this on a brand site.' + (r.nameSearchFailed ? ' The search by name failed too.' : '') + ' These matches were found elsewhere. Open one to look, or paste its brand-site link below if you find it.', true);
+    } else {
+      isSetMsg(r.lensCount ? 'Couldn’t find this on a brand site, and Google Lens found nothing else worth showing. Try a tighter crop.'
+        : 'Google Lens found no matches for this photo. Try a tighter crop or a clearer photo.', true);
+    }
+    elsewhere.forEach(c => wrap.appendChild(isCandidateCard(c, { linkOnly: true })));
+
+    const notes = [];
+    if (official.length) notes.push('Colour and size variants can look identical, so double-check the colour and size on the brand page.');
+    if (r.credits) notes.push('This search used ' + r.credits + ' Serper credit' + (r.credits === 1 ? '' : 's') + '.');
+    el('isNote').textContent = notes.join(' ');
+    el('isSteps').hidden = true;
+    el('isResultActions').hidden = false;
+    isSetState('results');
+  }
+
+  function isUploadProblem(err) {
+    const said = String((err && (err.message || err.error)) || err || '');
+    if (/bucket not found/i.test(said)) return 'The photo couldn’t be uploaded: the “' + IS_BUCKET + '” storage bucket doesn’t exist in Supabase yet. Create it (the SQL is in CLAUDE.md, under “Search by image”), then try again.';
+    if (/row-level security|policy|unauthorized|403/i.test(said)) return 'The photo couldn’t be uploaded: Supabase refused it. The “' + IS_BUCKET + '” bucket needs its storage policies (SQL in CLAUDE.md, under “Search by image”).';
+    return 'The photo couldn’t be uploaded' + (said ? ' (' + said.slice(0, 140) + ')' : '') + '. Nothing was searched.';
+  }
+
+  async function runImageSearch() {
+    const token = serperTokenInput.value.trim();
+    if (!token || !db) {
+      const m = el('isMsg');
+      m.textContent = (!token ? 'Searching by image needs your Serper token. ' : 'Searching by image needs your Supabase details, to hold the photo for a moment. ');
+      m.classList.add('err');
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'is-link'; b.textContent = 'Add it in Settings';
+      b.addEventListener('click', () => switchTab('settings'));
+      m.appendChild(b);
+      return;
+    }
+    const run = ++isRun;
+    const stale = () => run !== isRun;
+    const store = db.storage.from(IS_BUCKET);
+    isClearOutput();
+    lensLog.length = 0;
+    el('isSearchBtn').disabled = true;
+    el('isChangeBtn').disabled = true;
+    ['upload', 'lens', 'find'].forEach(s => isSetStep(s, 'pending'));
+    el('isSteps').hidden = false;
+    isSetState('running');
+
+    let step = 'upload', path = null, credits = 0;
+    const giveUp = (message) => {
+      if (stale()) return;
+      isSetStep(step, 'failed');
+      isSetMsg(message, true);
+      el('isSearchBtn').disabled = false;
+      el('isChangeBtn').disabled = false;
+      isSetState('crop');
+    };
+    try {
+      // 1. upload
+      isSetStep('upload', 'active');
+      const blob = await isCroppedBlob();
+      const name = isRandomName();
+      const up = await store.upload(name, blob, { contentType: 'image/jpeg', cacheControl: '0', upsert: false });
+      if (up.error) throw up.error;
+      path = name;
+      const publicUrl = store.getPublicUrl(name).data.publicUrl;
+      isSetStep('upload', 'done');
+
+      // 2. Google Lens, then the upload is deleted whether or not that worked
+      step = 'lens';
+      isSetStep('lens', 'active');
+      let lens;
+      try { lens = await serperLens(publicUrl, token); }
+      finally {
+        const gone = await isDeleteUpload(store, path);
+        if (!gone) el('isWarn').textContent = 'The uploaded photo couldn’t be deleted from Supabase Storage. Delete “' + path + '” from the “' + IS_BUCKET + '” bucket by hand.';
+        path = null;
+      }
+      credits += lens.credits;
+      isSetStep('lens', 'done');
+      if (stale()) return;
+
+      // 3. brand-site matches, or one search of the brand's site by the item's name
+      step = 'find';
+      isSetStep('find', 'active');
+      const sorted = isSortMatches(lens.list);
+      const result = Object.assign({ byName: false, lensCount: lens.list.length, nameSearchFailed: false }, sorted);
+      if (!sorted.official.length) {
+        const fromSite = sorted.unusable[0];
+        const guess = fromSite ? { key: fromSite.brandKey, title: fromSite.title, source: '' } : isBrandFromText(lens.list);
+        const brand = guess && BRANDS[guess.key];
+        const title = guess && isSearchTitle(guess.title, guess.source);
+        if (brand && brand.site && title) {
+          step = 'fallback search';
+          const query = 'site:' + brand.site + ' ' + title;
+          const data = await serperSearch(query, token, false, 10).catch(err => { console.error('image search: fallback search failed', err); return null; });
+          if (!data) { console.error('image search: fallback search failed', query); result.nameSearchFailed = true; }
+          else {
+            credits += Number(data.credits) || 0;
+            lensLog.push({ kind: 'search after lens', q: query, results: data.organic || [] });
+            const found = isSortMatches((data.organic || []).map(o => ({ title: o.title || '', link: String(o.link || ''), source: brand.name, thumb: o.imageUrl || o.thumbnailUrl || null })));
+            found.official.sort((a, b) => a.rank - b.rank || a.order - b.order);
+            result.official = found.official;
+            result.byName = found.official.length > 0;
+            result.site = brand.site;
+          }
+          step = 'find';
+        }
+      }
+      if (stale()) return;
+      isSetStep('find', 'done');
+      result.credits = credits;
+      isShowResults(result);
+    } catch (e) {
+      console.error('image search: ' + step + ' failed', e);
+      if (step === 'upload') giveUp(isUploadProblem(e));
+      else if (step === 'lens') giveUp(e && (e.status === 401 || e.status === 403)
+        ? 'Serper turned the search down (' + e.status + '). Check the Serper token in Settings.'
+        : 'The Google Lens search failed' + (e && e.message ? ' (' + String(e.message).slice(0, 160) + ')' : '') + '. Try again.');
+      else giveUp('Something went wrong while sorting the matches. Try again.');
+    } finally {
+      // Only reached with a file still up if something threw between the upload and the Lens call.
+      if (path) await isDeleteUpload(store, path);
+    }
+  }
+
+  el('imgSearchDrop').addEventListener('click', () => el('imgSearchFile').click());
+  el('isChangeBtn').addEventListener('click', () => el('imgSearchFile').click());
+  el('isNewPhotoBtn').addEventListener('click', () => el('imgSearchFile').click());
+  el('imgSearchFile').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if (f) isLoadFile(f);
+    e.target.value = '';   // so picking the same photo again still fires "change"
+  });
+  el('isResetBtn').addEventListener('click', () => isReset());
+  el('isSearchBtn').addEventListener('click', runImageSearch);
+  el('isRecropBtn').addEventListener('click', () => { isRun++; isClearOutput(); isSetState('crop'); });
+  ['dragenter', 'dragover'].forEach(t => imgSearch.addEventListener(t, e => {
+    if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes('Files')) return;
+    e.preventDefault();
+    imgSearch.classList.add('drag');
+  }));
+  imgSearch.addEventListener('dragleave', e => { if (!imgSearch.contains(e.relatedTarget)) imgSearch.classList.remove('drag'); });
+  imgSearch.addEventListener('drop', e => {
+    imgSearch.classList.remove('drag');
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (!files || !files.length) return;
+    e.preventDefault();
+    isLoadFile(Array.from(files).find(f => /^image\//i.test(f.type)) || files[0]);
+  });
+  // Cmd/Ctrl+V anywhere on the Prices screen. Pasted text is left alone (it's a link going into
+  // the search bar); only a pasted picture is taken.
+  document.addEventListener('paste', e => {
+    if (document.body.dataset.tab !== 'prices' || !el('pricesView').classList.contains('active')) return;
+    if (document.querySelector('.modal-overlay.open')) return;
+    const files = e.clipboardData && e.clipboardData.files;
+    const file = files && Array.from(files).find(f => /^image\//i.test(f.type));
+    if (!file) return;
+    e.preventDefault();
+    isLoadFile(file);
   });
 
   el('refreshRate').addEventListener('click', async () => {

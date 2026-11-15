@@ -6,6 +6,32 @@ is for tracking progress at a glance — for the technical "how it works" refere
 
 ---
 
+## 2026-11-15 — Search by image
+
+On the Prices screen, under "Prefer to paste both links yourself?", there's a new **Search by
+image** card. Give it a photo (a client's WhatsApp screenshot, an Instagram post) and it looks for
+that product on the brand's own website, then runs the normal price check on the link you pick.
+
+- **Adding the photo:** tap the card (on a phone it offers the camera or your photos), drag a file
+  onto it, or just paste a screenshot with Cmd/Ctrl+V while on Prices.
+- **Crop first:** drag the corners of the box so it holds only the item, then tap **Search**.
+- **You always confirm.** It shows up to 5 products from brand sites, each marked "Official site",
+  and "Best match" when there's exactly one. Tap the right one and the usual check runs. Nothing is
+  priced until you tap.
+- **If it isn't on a brand site** it searches that brand's site by the item's name. If that finds
+  nothing either, it says so and shows the other matches (resellers and so on) as links to open.
+- **Your photo is deleted** from storage as soon as the Google search is done, whether it worked
+  or not. If the delete ever fails, it tells you which file to remove.
+- **Cost:** each search uses Serper credits. I couldn't confirm the number from Serper's site, so
+  the card shows what each search actually used.
+
+**Needs a one-off setup in Supabase** before it works: a storage bucket called `lookup-images`.
+The SQL is in CLAUDE.md under "Search by image". Until then the card tells you it's missing.
+
+This was tested with made-up search results only, not against the real Google Lens service.
+
+---
+
 ## 2026-11-14 (later) — Savings card: KickBros price in whole pounds
 
 The KickBros price on the card is now always whole pounds (e.g. £810, never £810.50 or £809.99).
