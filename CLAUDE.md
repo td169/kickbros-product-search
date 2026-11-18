@@ -593,6 +593,18 @@ The read policy is needed for the delete to work, not for viewing (a public buck
 without it). Until the bucket exists the upload fails and the widget says which of the two
 (bucket or policies) is missing.
 
+### Change photo (tap the product image)
+
+The image on the Prices card (`#prodImgBtn`) and in the product-detail modal (`#pmImgBtn`) opens
+`#photoOverlay`: choose a photo, or paste an image link. A chosen file is shrunk to a JPEG (long
+side 1000px, transparency on white) and uploaded to the **same `lookup-images` bucket** as Search
+by image, under `products/` (no new SQL needed; that widget only deletes its own upload by name).
+A pasted link is only used once it has actually loaded as an image. Either way it's written as
+`{ image_url }` on the row. `userPhotoIds` stops a Google image search still in flight from
+replacing a hand-picked photo, and `runCheck` keeps an uploaded photo (`isOwnPhoto`) over the
+page's `og:image` on a re-check. A pasted link isn't recognised that way, so a later re-check
+that scrapes a new `og:image` can replace it.
+
 ### Savings card (download button on product rows)
 
 `buildCatalogRow(entry, onOpen, opts)` adds a download button (`.catalog-dl`) when

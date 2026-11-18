@@ -548,6 +548,24 @@
     overflow:hidden;
   }
   .card-img-wrap img{width:100%;height:100%;object-fit:contain;}
+  /* Tapping the photo opens "Change photo". A small pencil badge says it can be tapped. */
+  .img-edit{position:relative;border:none;padding:0;font:inherit;cursor:pointer;}
+  .img-edit::after{
+    content:"✎";position:absolute;right:2px;bottom:2px;width:16px;height:16px;border-radius:50%;
+    background:var(--ink);color:var(--on-ink);font-size:10px;line-height:16px;text-align:center;
+    opacity:.85;pointer-events:none;
+  }
+  .img-edit:hover::after,.img-edit:focus-visible::after{opacity:1;}
+  .photo-preview{
+    width:120px;height:120px;margin:0 auto 14px;border-radius:var(--radius-sm);
+    background:var(--surface);display:flex;align-items:center;justify-content:center;overflow:hidden;
+  }
+  .photo-preview img{width:100%;height:100%;object-fit:contain;}
+  .photo-url-row{display:flex;gap:8px;}
+  .photo-url-row input{flex:1;min-width:0;}
+  .photo-url-row .btn-pill{flex:none;}
+  .photo-msg{margin:10px 0 0;font-size:12.5px;line-height:1.45;color:var(--muted);min-height:1em;}
+  .photo-msg.err{color:var(--danger);}
   .card-title-wrap{flex:1;min-width:0;padding-top:1px;}
   .brand-name{
     font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
@@ -904,7 +922,7 @@
      and delete-confirm; the client picker's own "+ Add new client" shortcut) — same z-index +
      DOM order alone would let the wrong one win depending purely on markup order, so nested
      ones get bumped explicitly rather than relying on that. */
-  #clientPickerOverlay, #deleteConfirmOverlay{z-index:41;}
+  #clientPickerOverlay, #deleteConfirmOverlay, #photoOverlay{z-index:41;}
   #newClientOverlay{z-index:42;}
   .modal{
     width:100%;max-width:460px;max-height:85vh;overflow-y:auto;
@@ -1467,9 +1485,9 @@
       </div>
 
       <div class="card-top">
-        <div class="card-img-wrap">
+        <button type="button" class="card-img-wrap img-edit" id="prodImgBtn" aria-label="Change photo" title="Change photo">
           <img id="prodImg" src="" alt="">
-        </div>
+        </button>
         <div class="card-title-wrap">
           <div class="brand-name" id="brandName">—</div>
           <input type="text" class="product-name" id="prodName" placeholder="Type the product name" autocomplete="off">
@@ -1708,6 +1726,26 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="photoOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Change photo</h3>
+        <button type="button" class="modal-close" id="photoClose" aria-label="Close">×</button>
+      </div>
+      <div class="photo-preview"><img id="photoPreview" src="" alt=""></div>
+      <button type="button" class="btn-primary" id="photoPickBtn" style="width:100%;">Choose a photo</button>
+      <input type="file" id="photoFile" accept="image/*" hidden>
+      <div class="field" style="margin-top:14px;">
+        <label for="photoUrl">Or paste an image link</label>
+        <div class="photo-url-row">
+          <input type="url" id="photoUrl" placeholder="https://…" autocomplete="off">
+          <button type="button" class="btn-pill" id="photoUrlBtn">Use</button>
+        </div>
+      </div>
+      <p class="photo-msg" id="photoMsg"></p>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="statsOverlay">
     <div class="modal">
       <div class="modal-header">
@@ -1777,9 +1815,9 @@
         <button type="button" class="modal-close" id="productDetailClose" aria-label="Close">×</button>
       </div>
       <div class="pm-top">
-        <div class="card-img-wrap">
+        <button type="button" class="card-img-wrap img-edit" id="pmImgBtn" aria-label="Change photo" title="Change photo">
           <img id="pmImg" src="" alt="">
-        </div>
+        </button>
         <div class="card-title-wrap">
           <div class="brand-name" id="pmBrand">—</div>
           <input type="text" class="product-name" id="pmName" placeholder="Product name" autocomplete="off">
@@ -2364,6 +2402,9 @@
   const card = el('card');
 
   let settings = { refund: 12, margin: 8.81, reseller: 3.04 };
+  // Catalog ids whose photo the user picked by hand this session. A Google image search still in
+  // flight for that product must not replace it when it finishes.
+  const userPhotoIds = new Set();
   let current = { rate:null, catalogId:null, nameSource:null, sku:null, brandKey:null, computed:null, imageUrl:null, tripLabel:null };
   // Whether the user has manually typed into the sale-price field for the product currently on
   // screen — once true, recalc() stops overwriting it with the freshly suggested price, since
@@ -6336,7 +6377,7 @@
       // so it doesn't need to stay on-screen to be valid — persist it to row `id` regardless of
       // what the user has since navigated to (see tryImageFallback for the same pattern).
       // An item re-checked only for its missing price may already have its photo.
-      const needImage = !(current.catalogId === id && current.imageUrl);
+      const needImage = !(current.catalogId === id && current.imageUrl) && !userPhotoIds.has(id);
       let img = ukUrl && needImage ? await serperImageSearch(ukUrl, token).catch(err => { console.error('serperImageSearch (UK)', id, err); return null; }) : null;
       if (!img && frUrl && needImage) img = await serperImageSearch(frUrl, token).catch(err => { console.error('serperImageSearch (FR)', id, err); return null; });
       if (img) {
@@ -6369,6 +6410,7 @@
     try {
       let img = await serperImageSearch(ukUrl, token).catch(err => { console.error('serperImageSearch (UK)', id, err); return null; });
       if (!img) img = await serperImageSearch(frUrl, token).catch(err => { console.error('serperImageSearch (FR)', id, err); return null; });
+      if (userPhotoIds.has(id)) return;
       if (!img) {
         console.warn('tryImageFallback: no image found for', id);
         if (current.catalogId === id) el('footnote').textContent = 'Couldn’t find an image for this listing — try again later or add one manually.';
@@ -6576,7 +6618,9 @@
       current.catalogId = null;
       current.nameSource = info.productName ? 'scrape' : (existing && existing.product_name ? 'user' : null);
       const productName = info.productName || (existing && existing.product_name) || null;
-      const imageUrl = info.imageUrl || (existing && existing.image_url) || null;
+      // A photo the user uploaded by hand ("Change photo") beats the page's own on a re-check.
+      const keptPhoto = existing && isOwnPhoto(existing.image_url) ? existing.image_url : null;
+      const imageUrl = keptPhoto || info.imageUrl || (existing && existing.image_url) || null;
       // A failed/partial scrape shouldn't wipe out a price this item already had on record —
       // only trust the fresh scrape's number when it actually found one.
       const ukPrice = info.ukPrice != null ? info.ukPrice : (existing ? existing.uk_retail : null);
@@ -7059,6 +7103,159 @@
     el('isResultActions').hidden = false;
     isSetState('results');
   }
+
+  // ---- Change photo (tap the product image on the price card or in the product popup) ----
+  // A chosen file is shrunk to a JPEG and kept in the same public bucket as Search by image,
+  // under products/ (that widget only ever deletes its own upload, by name). A pasted link is
+  // used as it is, once it has actually loaded as an image.
+  const PHOTO_PREFIX = 'products/';
+  const PHOTO_MAX_SIDE = 1000;
+  let photoTarget = null; // { id, apply(url) }
+  let photoBusy = false;
+
+  function isOwnPhoto(url) {
+    return !!url && url.indexOf('/' + IS_BUCKET + '/' + PHOTO_PREFIX) !== -1;
+  }
+  function setPhotoMsg(text, err) {
+    el('photoMsg').textContent = text || '';
+    el('photoMsg').classList.toggle('err', !!err);
+  }
+  function setPhotoBusy(on) {
+    photoBusy = on;
+    ['photoPickBtn', 'photoUrlBtn', 'photoUrl'].forEach(k => { el(k).disabled = on; });
+  }
+  function openPhotoSheet(target, currentUrl) {
+    photoTarget = target;
+    el('photoPreview').src = currentUrl || PLACEHOLDER_IMG;
+    el('photoPreview').onerror = () => { el('photoPreview').src = PLACEHOLDER_IMG; };
+    el('photoUrl').value = '';
+    el('photoFile').value = '';
+    setPhotoMsg(target.id ? '' : 'This product isn’t saved to the catalog, so the new photo only shows here.');
+    setPhotoBusy(false);
+    el('photoOverlay').classList.add('open');
+  }
+  function closePhotoSheet() {
+    if (photoBusy) return;
+    el('photoOverlay').classList.remove('open');
+    photoTarget = null;
+  }
+  function loadImageFrom(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => (img.naturalWidth ? resolve(img) : reject(new Error('not an image')));
+      img.onerror = () => reject(new Error('not an image'));
+      img.src = src;
+    });
+  }
+  async function photoFileToJpeg(file) {
+    const objUrl = URL.createObjectURL(file);
+    try {
+      const img = await loadImageFrom(objUrl);
+      const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      const x = c.getContext('2d');
+      x.fillStyle = '#fff'; // transparent PNGs go on white, like the brand sites show them
+      x.fillRect(0, 0, c.width, c.height);
+      x.drawImage(img, 0, 0, c.width, c.height);
+      return await new Promise((resolve, reject) => c.toBlob(b => (b ? resolve(b) : reject(new Error('could not turn the photo into a JPEG'))), 'image/jpeg', 0.86));
+    } finally { URL.revokeObjectURL(objUrl); }
+  }
+  async function applyPhoto(url) {
+    const t = photoTarget;
+    if (!t) return;
+    const ok = await t.apply(url);
+    if (ok === false) { setPhotoMsg('The photo couldn’t be saved to the catalog. Check your connection and try again.', true); return; }
+    photoBusy = false;
+    closePhotoSheet();
+  }
+  el('photoPickBtn').addEventListener('click', () => el('photoFile').click());
+  el('photoFile').addEventListener('change', async () => {
+    const file = el('photoFile').files && el('photoFile').files[0];
+    if (!file || photoBusy) return;
+    if (!db) { setPhotoMsg('Uploading a photo needs your Supabase details in Settings. You can paste an image link instead.', true); return; }
+    setPhotoBusy(true);
+    setPhotoMsg('Uploading…');
+    try {
+      const blob = await photoFileToJpeg(file);
+      el('photoPreview').src = URL.createObjectURL(blob);
+      const store = db.storage.from(IS_BUCKET);
+      const name = PHOTO_PREFIX + isRandomName();
+      const up = await store.upload(name, blob, { contentType: 'image/jpeg', cacheControl: '31536000', upsert: false });
+      if (up.error) throw up.error;
+      await applyPhoto(store.getPublicUrl(name).data.publicUrl);
+    } catch (err) {
+      console.error('change photo upload', err);
+      const said = String((err && (err.message || err.error)) || err || '');
+      setPhotoMsg(/not an image/i.test(said)
+        ? 'That file couldn’t be opened as a photo. Try a JPEG or PNG.'
+        : isUploadProblem(err).replace(' Nothing was searched.', ''), true);
+    } finally {
+      setPhotoBusy(false);
+      el('photoFile').value = '';
+    }
+  });
+  async function usePhotoUrl() {
+    if (photoBusy) return;
+    const raw = el('photoUrl').value.trim();
+    let url;
+    try { url = new URL(raw); } catch (e) { url = null; }
+    if (!url || !/^https?:$/.test(url.protocol)) { setPhotoMsg('Paste a full image link, starting with https://', true); return; }
+    setPhotoBusy(true);
+    setPhotoMsg('Checking the link…');
+    try {
+      await loadImageFrom(url.href);
+      el('photoPreview').src = url.href;
+      await applyPhoto(url.href);
+    } catch (e) {
+      setPhotoMsg('That link didn’t load as an image. Copy the image’s own address (right-click or long-press the photo, then “Copy image address”).', true);
+    } finally { setPhotoBusy(false); }
+  }
+  el('photoUrlBtn').addEventListener('click', usePhotoUrl);
+  el('photoUrl').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); usePhotoUrl(); } });
+  el('photoClose').addEventListener('click', closePhotoSheet);
+  el('photoOverlay').addEventListener('click', e => { if (e.target === el('photoOverlay')) closePhotoSheet(); });
+
+  function showCardPhoto(url) {
+    el('prodImg').src = url || PLACEHOLDER_IMG;
+    el('prodImg').onerror = () => { el('prodImg').src = PLACEHOLDER_IMG; };
+  }
+  function rememberPhoto(id, url) {
+    userPhotoIds.add(id);
+    const cached = catalogRows.find(r => r.id === id);
+    if (cached) cached.image_url = url;
+    if (productModalEntry && productModalEntry.id === id) {
+      productModalEntry.image_url = url;
+      el('pmImg').src = url;
+    }
+    if (current.catalogId === id) { current.imageUrl = url; showCardPhoto(url); }
+  }
+  el('prodImgBtn').addEventListener('click', () => {
+    const id = current.catalogId;
+    openPhotoSheet({
+      id,
+      apply: async (url) => {
+        if (!id) { current.imageUrl = url; showCardPhoto(url); return true; }
+        if (!(await updateCatalogEntry(id, { image_url: url }))) return false;
+        rememberPhoto(id, url);
+        return true;
+      }
+    }, current.imageUrl);
+  });
+  el('pmImgBtn').addEventListener('click', () => {
+    if (!productModalEntry) return;
+    const entry = productModalEntry;
+    openPhotoSheet({
+      id: entry.id,
+      apply: async (url) => {
+        if (!(await updateCatalogEntry(entry.id, { image_url: url }))) return false;
+        entry.image_url = url;
+        rememberPhoto(entry.id, url);
+        return true;
+      }
+    }, entry.image_url);
+  });
 
   function isUploadProblem(err) {
     const said = String((err && (err.message || err.error)) || err || '');
